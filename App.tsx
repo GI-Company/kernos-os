@@ -19,6 +19,7 @@ import { ToastSystem } from './components/ui/ToastSystem';
 import { SystemMetricsApp } from './apps/SystemMetrics';
 import { SettingsApp } from './apps/Settings';
 import { MultiAgentWorkspace } from './apps/MultiAgentWorkspace';
+import { TimelineSlider } from './apps/TimelineSlider';
 import { kernel } from './services/kernel';
 
 type BootPhase = 'boot' | 'login' | 'desktop';
@@ -107,6 +108,7 @@ const App: React.FC = () => {
       case 'metrics': return <SystemMetricsApp />;
       case 'settings': return <SettingsApp />;
       case 'multi-agents': return <MultiAgentWorkspace />;
+      case 'timeline': return <TimelineSlider />;
       default: return <div className="p-4 text-red-500">App not found</div>;
     }
   };

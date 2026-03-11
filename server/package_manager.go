@@ -135,31 +135,47 @@ func emitProgress(bus *Bus, runID string, step string, progress int) {
 	})
 }
 
-// getPackageURL returns a real or stub URL for demonstration.
-// In a real OS, this queries an index registry. For Phase 15, we use minimal standalone binaries or stubs.
+// getPackageURL returns a real download URL from upstream GitHub releases.
+// The registry detects the current OS/Arch to serve the correct binary.
 func getPackageURL(pkgName string) string {
 	osType := runtime.GOOS
 	arch := runtime.GOARCH
+	isDarwinArm := osType == "darwin" && arch == "arm64"
+	isDarwinAmd := osType == "darwin" && arch == "amd64"
+	isLinuxAmd := osType == "linux" && arch == "amd64"
 
 	switch pkgName {
 	case "sqlite":
-		if osType == "darwin" && arch == "arm64" {
-			// Using a small public zipped binary as an example footprint
+		if isDarwinArm {
 			return "https://github.com/nalgeon/sqlean/releases/download/0.21.6/sqlean-macos-arm64.zip"
-		} else if osType == "linux" && arch == "amd64" {
-			return "https://github.com/nalgeon/sqlean/releases/download/0.21.6/sqlean-linux-x86.zip"
+		} else if isDarwinAmd {
+			return "https://github.com/nalgeon/sqlean/releases/download/0.21.6/sqlean-macos-x86.zip"
 		}
-		// Fallback for demo
 		return "https://github.com/nalgeon/sqlean/releases/download/0.21.6/sqlean-linux-x86.zip"
 	case "python":
-		// Small standalone python build
+		if isDarwinArm {
+			return "https://github.com/indygreg/python-build-standalone/releases/download/20240224/cpython-3.12.2+20240224-aarch64-apple-darwin-install_only.tar.gz"
+		} else if isDarwinAmd {
+			return "https://github.com/indygreg/python-build-standalone/releases/download/20240224/cpython-3.12.2+20240224-x86_64-apple-darwin-install_only.tar.gz"
+		}
 		return "https://github.com/indygreg/python-build-standalone/releases/download/20240224/cpython-3.12.2+20240224-x86_64-unknown-linux-musl-install_only.tar.gz"
 	case "node":
-		// A tiny node footprint
+		if isDarwinArm {
+			return "https://nodejs.org/dist/v20.11.1/node-v20.11.1-darwin-arm64.tar.gz"
+		} else if isDarwinAmd {
+			return "https://nodejs.org/dist/v20.11.1/node-v20.11.1-darwin-x64.tar.gz"
+		}
 		return "https://nodejs.org/dist/v20.11.1/node-v20.11.1-linux-x64.tar.gz"
-	case "rustc", "ffmpeg":
-		// Return the sqlite link just to prove the download mechanics work end-to-end without spending huge bandwidth
-		return "https://github.com/nalgeon/sqlean/releases/download/0.21.6/sqlean-linux-x86.zip"
+	case "ffmpeg":
+		if isDarwinArm || isDarwinAmd {
+			return "https://evermeet.cx/ffmpeg/getrelease/zip"
+		}
+		return "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+	case "rustc":
+		if isLinuxAmd {
+			return "https://static.rust-lang.org/dist/rust-1.76.0-x86_64-unknown-linux-musl.tar.gz"
+		}
+		return ""
 	}
 	return ""
 }

@@ -193,6 +193,7 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 			if prompt == "" {
 				continue
 			}
+			imageB64, _ := payloadMap["image"].(string)
 
 			// Check for context cancellation
 			select {
@@ -203,10 +204,8 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 
 			log.Printf("[%s] Chat from %s: %.60s...", agent.ID, env.From, prompt)
 
-			go func(from string, msg string) {
+			go func(from string, msg string, imgB64 string) {
 				// ++ SOTA RAG INJECTION (PHASE 14) ++
-				// If this is the Dispatcher, pull semantic context from the VectorDB's HotCache instantly,
-				// or fallback to real-time search.
 				ragContext := ""
 				if agent.ID == "agent-dispatcher" && GlobalVectorDB != nil {
 					var results []SearchResult
@@ -221,7 +220,6 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 
 					if hotCacheLen > 0 {
 						log.Printf("[RAG] ⚡ CACHE HIT! Instant speculative context loaded via Sensory Cortex.")
-						// Clear cache after use to ensure freshness
 						GlobalVectorDB.HotCacheMutex.Lock()
 						GlobalVectorDB.HotCache = nil
 						GlobalVectorDB.HotCacheMutex.Unlock()
@@ -245,21 +243,85 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 				// Inject RAG into System Prompt dynamically
 				finalSystemPrompt := agent.SystemPrompt + ragContext
 
-				response, err := queryLM(agent.LMStudioURL, agent.Model, finalSystemPrompt, msg, func(token string) {
-					streamEnv := agentEnvelope{
-						Topic: "agent.chat:stream",
-						From:  agent.ID,
-						To:    from,
-						Time:  time.Now().Format(time.RFC3339),
-						Payload: map[string]string{
-							"chunk": token,
-						},
+				// Build the user message — either plain text or multimodal (text + image)
+				var userContent interface{}
+				if imgB64 != "" {
+					log.Printf("[%s] 🖼️ VL Image Analysis activated (%.1fKB)", agent.ID, float64(len(imgB64))/1024.0)
+					userContent = []map[string]interface{}{
+						{"type": "text", "text": msg},
+						{"type": "image_url", "image_url": map[string]string{"url": "data:image/png;base64," + imgB64}},
 					}
-					_ = conn.WriteJSON(streamEnv)
-				})
+				} else {
+					userContent = msg
+				}
+
+				// Build the request manually to support multimodal content
+				reqBody := map[string]interface{}{
+					"model":  agent.Model,
+					"stream": true,
+					"messages": []map[string]interface{}{
+						{"role": "system", "content": finalSystemPrompt},
+						{"role": "user", "content": userContent},
+					},
+				}
+
+				jsonData, err := json.Marshal(reqBody)
 				if err != nil {
-					log.Printf("[%s] LM Studio error: %v", agent.ID, err)
-					response = fmt.Sprintf("Error: %v", err)
+					log.Printf("[%s] JSON marshal error: %v", agent.ID, err)
+					return
+				}
+
+				resp, err := http.Post(agent.LMStudioURL, "application/json", bytes.NewBuffer(jsonData))
+				if err != nil {
+					log.Printf("[%s] LM Studio unreachable: %v", agent.ID, err)
+					return
+				}
+				defer resp.Body.Close()
+
+				reader := bufio.NewReader(resp.Body)
+				var fullContent strings.Builder
+				for {
+					line, err := reader.ReadBytes('\n')
+					if err != nil {
+						break
+					}
+					lineStr := string(line)
+					if strings.HasPrefix(lineStr, "data: ") {
+						dataStr := strings.TrimSpace(strings.TrimPrefix(lineStr, "data: "))
+						if dataStr == "[DONE]" {
+							break
+						}
+						var chunk struct {
+							Choices []struct {
+								Delta struct {
+									Content string `json:"content"`
+								} `json:"delta"`
+							} `json:"choices"`
+						}
+						if err := json.Unmarshal([]byte(dataStr), &chunk); err == nil {
+							if len(chunk.Choices) > 0 {
+								token := chunk.Choices[0].Delta.Content
+								if token != "" {
+									fullContent.WriteString(token)
+									streamEnv := agentEnvelope{
+										Topic: "agent.chat:stream",
+										From:  agent.ID,
+										To:    from,
+										Time:  time.Now().Format(time.RFC3339),
+										Payload: map[string]string{
+											"chunk": token,
+										},
+									}
+									_ = conn.WriteJSON(streamEnv)
+								}
+							}
+						}
+					}
+				}
+
+				response := fullContent.String()
+				if response == "" {
+					response = "No response from model"
 				}
 
 				reply := agentEnvelope{
@@ -272,7 +334,7 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 					},
 				}
 				_ = conn.WriteJSON(reply)
-			}(env.From, prompt)
+			}(env.From, prompt, imageB64)
 		}
 
 		// Handle ping

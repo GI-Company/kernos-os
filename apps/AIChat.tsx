@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { kernel } from '../services/kernel';
 import { Envelope } from '../types';
-import { Bot, Send, Loader2, ChevronDown, Zap } from 'lucide-react';
+import { Bot, Send, Loader2, ChevronDown, Zap, ImagePlus } from 'lucide-react';
 
 interface ChatMessage {
     id: string;
@@ -29,6 +29,9 @@ export const AIChatApp: React.FC = () => {
     const [streamBuffer, setStreamBuffer] = useState('');
     const bottomRef = useRef<HTMLDivElement>(null);
     const agentCheckTimer = useRef<ReturnType<typeof setTimeout>>();
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [imageBase64, setImageBase64] = useState<string | null>(null);
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -121,17 +124,40 @@ export const AIChatApp: React.FC = () => {
         }]);
 
         if (directMode) {
-            // Direct to kernel's embedded LM
+            // Direct to kernel's embedded LM (with optional image for VL analysis)
             const reqId = Math.random().toString(36).substring(7);
-            kernel.publish('ai.chat', { _request_id: reqId, prompt: msg });
+            if (imageBase64) {
+                kernel.publish('ai.chat', { _request_id: reqId, prompt: msg, image: imageBase64 });
+            } else {
+                kernel.publish('ai.chat', { _request_id: reqId, prompt: msg });
+            }
         } else {
-            // Targeted agent message
-            kernel.sendToAgent(selectedAgent, 'agent.chat', { msg });
+            // Targeted agent message (with optional image for VL analysis)
+            if (imageBase64) {
+                kernel.sendToAgent(selectedAgent, 'agent.chat', { msg, image: imageBase64 });
+            } else {
+                kernel.sendToAgent(selectedAgent, 'agent.chat', { msg });
+            }
         }
 
         setInput('');
         setIsWaiting(true);
         setStreamBuffer('');
+        setImagePreview(null);
+        setImageBase64(null);
+    };
+
+    const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = reader.result as string;
+            setImagePreview(result);
+            // Strip the data:image/...;base64, prefix for the API
+            setImageBase64(result.split(',')[1] || result);
+        };
+        reader.readAsDataURL(file);
     };
 
     const currentAgent = agents.find(a => a.id === selectedAgent);
@@ -238,13 +264,37 @@ export const AIChatApp: React.FC = () => {
 
             {/* Input */}
             <div className="p-3 border-t border-white/5 bg-white/[0.02]">
+                {/* Image Preview */}
+                {imagePreview && (
+                    <div className="mb-2 relative inline-block">
+                        <img src={imagePreview} alt="upload" className="h-16 rounded border border-white/10" />
+                        <button
+                            onClick={() => { setImagePreview(null); setImageBase64(null); }}
+                            className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]"
+                        >✕</button>
+                    </div>
+                )}
                 <div className="flex gap-2">
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageSelect}
+                        className="hidden"
+                    />
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-gray-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-colors"
+                        title="Attach image for VL analysis"
+                    >
+                        <ImagePlus size={16} />
+                    </button>
                     <input
                         type="text"
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && sendMessage()}
-                        placeholder={directMode ? 'Ask the Kernos AI anything...' : `Message ${currentAgent?.name || 'agent'}...`}
+                        placeholder={imageBase64 ? 'Describe what you want to know about this image...' : (directMode ? 'Ask the Kernos AI anything...' : `Message ${currentAgent?.name || 'agent'}...`)}
                         className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-purple-500/50 transition-colors"
                     />
                     <button
