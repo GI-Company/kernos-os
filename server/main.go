@@ -46,9 +46,14 @@ var ALLOWED_COMMANDS = map[string]bool{
 	"whoami":  true,
 	"grep":    true,
 	"wc":      true,
-	"git":     true, // Caution: git can still be powerful
-	"node":    true, // Caution: node allows code execution
-	"python3": true,
+	"git":      true, // Caution: git can still be powerful
+	"node":     true, // Caution: node allows code execution
+	"python3":  true,
+	"python":   true,
+	"sqlite3":  true,
+	"rustc":    true,
+	"cargo":    true,
+	"ffmpeg":   true,
 }
 
 type Envelope struct {
@@ -1057,9 +1062,23 @@ func ExecuteSafeCommand(reqID string, cmdStr string, args []string) (string, err
 	cmd := exec.CommandContext(ctx, cmdStr, safeArgs...)
 	cmd.Dir = jailDir // Force execution inside the jail
 
+	homeDir, _ := os.UserHomeDir()
+	pkgPathBase := filepath.Join(homeDir, ".kernos", "packages")
+
+	dynamicPath := "/usr/local/bin:/usr/bin:/bin"
+	if entries, err := os.ReadDir(pkgPathBase); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				pkgRoot := filepath.Join(pkgPathBase, e.Name())
+				pkgBin := filepath.Join(pkgRoot, "bin")
+				dynamicPath += ":" + pkgBin + ":" + pkgRoot
+			}
+		}
+	}
+
 	// Phase 11: Strip all host environment variables to prevent host discovery
 	cmd.Env = []string{
-		"PATH=/usr/bin:/bin",
+		"PATH=" + dynamicPath,
 		"HOME=" + jailDir,
 		"TMPDIR=" + jailDir,
 		"LANG=en_US.UTF-8",

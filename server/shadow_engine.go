@@ -89,7 +89,7 @@ func (se *ShadowEngine) SpawnShadowTask(cmdString string) {
 
 		// Security: Only allow basic commands matching the safe predictor list
 		switch parts[0] {
-		case "go", "npm", "cargo", "pytest", "echo", "pwd", "ls":
+		case "go", "npm", "cargo", "pytest", "echo", "pwd", "ls", "node", "python3", "sqlite3":
 			cmd = exec.CommandContext(ctx, parts[0], parts[1:]...)
 		default:
 			log.Printf("[Shadow Engine] ⛔ Blocked unsafe shadow command: %s", cmdString)

@@ -29,32 +29,44 @@ func RunSynapticConsolidation(lmURL string) {
 		GlobalVectorDB.DecayWeights()
 	}
 
-	// Fetch failures from the last 24 hours
 	since := time.Now().Add(-24 * time.Hour)
 	failures, err := GlobalTelemetry.FetchFailedExecutions(since)
 	if err != nil {
-		log.Printf("[RLHF] ❌ Error fetching telemetry: %v", err)
+		log.Printf("[RLHF] ❌ Error fetching failures: %v", err)
 		return
 	}
 
-	if len(failures) == 0 {
-		log.Println("[RLHF] 💤 No failed tasks to consolidate. Restful sleep.")
+	successes, err := GlobalTelemetry.FetchSuccessfulExecutions(since)
+	if err != nil {
+		log.Printf("[RLHF] ❌ Error fetching successes: %v", err)
+	}
+
+	if len(failures) == 0 && len(successes) == 0 {
+		log.Println("[RLHF] 💤 No task data to consolidate. Restful sleep.")
 		return
 	}
 
-	log.Printf("[RLHF] Found %d failed task sequences. Synthesizing lessons...", len(failures))
+	log.Printf("[RLHF] Synthesizing gradients from %d failures and %d successful trajectories...", len(failures), len(successes))
 
-	// Construct the prompt for the Architect
+	// Construct the prompt for the Architect using Contrastive RLHF
 	promptBuilder := strings.Builder{}
-	promptBuilder.WriteString("Analyze the following failed or aborted OS task executions from the past 24 hours.\n")
-	promptBuilder.WriteString("Synthesize a concise list of 3-5 'Lessons Learned' or 'Developer Preferences' to add to the system prompt so we avoid these mistakes in the future.\n")
-	promptBuilder.WriteString("Output ONLY the actionable rules (e.g. 'Never use rm -rf', 'Always use verbose logging'). Do not include conversational filler.\n\n")
+	promptBuilder.WriteString("Analyze the following execution trajectories from the past 24 hours categorized by mathematical reward.\n")
+	promptBuilder.WriteString("Contrast the 'Golden Paths' (high reward) against the 'Anti-Patterns' (negative reward).\n")
+	promptBuilder.WriteString("Synthesize 3-5 structural 'Laws' to append to your weights so you inherently prefer Golden Paths.\n")
+	promptBuilder.WriteString("Output ONLY the actionable rules. No markdown or conversational filler.\n\n")
 
-	for i, f := range failures {
-		promptBuilder.WriteString(fmt.Sprintf("--- Failure %d ---\n", i+1))
-		promptBuilder.WriteString(fmt.Sprintf("Original Prompt/Context:\n%s\n", f["prompt"]))
-		promptBuilder.WriteString(fmt.Sprintf("Outcome: %s\n", f["outcome"]))
-		promptBuilder.WriteString(fmt.Sprintf("Error Log:\n%s\n\n", f["error_log"]))
+	promptBuilder.WriteString("--- 🥇 POSITIVE REINFORCEMENT (Golden Paths) ---\n")
+	for _, s := range successes {
+		promptBuilder.WriteString(fmt.Sprintf("\n[Reward: %.1f]\n", s["reward"].(float64)))
+		promptBuilder.WriteString(fmt.Sprintf("Prompt: %s\n", s["prompt"].(string)))
+		promptBuilder.WriteString(fmt.Sprintf("Outcome: %s\n", s["outcome"].(string)))
+	}
+
+	promptBuilder.WriteString("\n--- 💀 NEGATIVE REINFORCEMENT (Anti-Patterns) ---\n")
+	for _, f := range failures {
+		promptBuilder.WriteString(fmt.Sprintf("\n[Reward: %.1f]\n", f["reward"].(float64)))
+		promptBuilder.WriteString(fmt.Sprintf("Prompt: %s\n", f["prompt"].(string)))
+		promptBuilder.WriteString(fmt.Sprintf("Error Log: %s\n", f["error_log"].(string)))
 	}
 
 	// Find Architect Config

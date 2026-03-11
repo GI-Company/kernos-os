@@ -126,4 +126,24 @@ func (g *P2PGateway) HandleP2P(env Envelope) {
 		// Our bus needs to know to proxy anything addressed to "node-*/..." out to WebRTC.
 		g.bus.Publish(innerEnv)
 	}
+
+	// Route WebRTC signaling directly between peers
+	if env.Topic == "p2p.signal" {
+		payloadMap, ok := env.Payload.(map[string]interface{})
+		if !ok {
+			return
+		}
+		
+		targetPin, _ := payloadMap["targetPin"].(string)
+		if targetPin == g.pin {
+			// Proxy the signal to whoever is listening on this socket
+			g.bus.Publish(Envelope{
+				Topic: "p2p.signal:relay",
+				From:  "kernel",
+				To:    env.From,
+				Payload: payloadMap["signalData"],
+				Time: time.Now().Format(time.RFC3339),
+			})
+		}
+	}
 }

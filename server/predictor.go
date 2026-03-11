@@ -179,6 +179,7 @@ func (pe *PredictionEngine) HandleTerminalTyping(env Envelope) {
 	
 	if exists {
 		if time.Since(entry.Timestamp) < 5*time.Minute {
+			GlobalShadowEngine.SpawnShadowTask(entry.Cmd)
 			pe.bus.Publish(Envelope{
 				Topic:   "terminal.predict",
 				From:    "kernel",
@@ -219,6 +220,8 @@ If you cannot confidently predict, output exactly "NONE".`
 			Timestamp: time.Now(),
 		}
 		pe.cacheMutex.Unlock()
+
+		GlobalShadowEngine.SpawnShadowTask(prediction)
 
 		pe.bus.Publish(Envelope{
 			Topic:   "terminal.predict",

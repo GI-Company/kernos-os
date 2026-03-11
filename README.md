@@ -27,28 +27,28 @@
 
 ## 🧬 The "Unconventional Trinity" Architecture
 
-Kernos OS discards traditional Unix and Windows paradigms. Instead of treating Artificial Intelligence as an external application, Kernos wires cognitive routing directly into the Kernel Space using the **Unconventional Trinity**:
+Kernos OS discards traditional Unix and Windows paradigms. Instead of treating Artificial Intelligence as an external application, Kernos wires cognitive routing directly into the Kernel Space:
 
-### 1. The Synaptic Vector Graph
-A traditional OS organizes memory via a hierarchical file system tree. Kernos OS replaces this with a mathematical **Synaptic Vector Graph**. Every keystroke in the terminal, every code file, and every config change is mapped into a localized Nomic 768-dimensional latent space. You do not search by filename; the kernel retrieves data by *conceptual resonance*, allowing the OS to fetch relevant memories before you even ask.
+### 1. Vector Graph Memory 
+A traditional OS organizes memory via a hierarchical file system tree. Kernos OS replaces this with a mathematical **Vector Graph**. Keystrokes, file contents, and system outputs are mapped into a localized Nomic 768-dimensional latent space. The kernel retrieves contextual operating data by semantic resonance, rather than exact path matching.
 
-### 2. Hallucinatory RAG (Retrieval-Augmented Generation)
-Kernos thrives on deliberate, controlled hallucination. The "Dispatcher" agent constantly hallucinates potential futures based on your current context. This leads to **Speculative Execution**: the OS forecasts your next 3 terminal commands or code edits, silently pre-executing them in a shadow jail. When you actually type the command, the result returns in 0ms.
+### 2. Speculative RAG Execution
+Kernos utilizes the predictive nature of Local LLMs for **Speculative Execution**. The OS evaluates partial terminal input, predicts the most likely complete command, and silently pre-executes it in an invisible sandbox jail. When the user eventually submits the command, the OS yields the pre-computed `stdout` with perceived zero-latency.
 
-### 3. Mutating DAGs (Directed Acyclic Graphs)
-Traditional programs run sequentially. Kernos executes tasks via biology-inspired **Mutating DAGs**. The OS generates a dependency graph to accomplish an objective. But as nodes execute and conditions change, the "Architect" agent *mutates the graph in real-time*, rewriting its own dependencies, spawning new parallel nodes, and pruning dead branches to survive volatile software states.
+### 3. Concurrent DAG Mutation 
+Traditional shell scripts run sequentially and fail abruptly. Kernos executes multi-step objectives using **Directed Acyclic Graphs (DAGs)**. If a node fails during execution, the "Architect" agent synthesizes multiple, divergent recovery paths. The engine executes these alternative branches in parallel; the first to exit successfully collapses the state and is grafted into the DAG, allowing execution to autonomously proceed.
 
 ---
 
-## ✨ Features Beyond Next-Gen
+## ✨ Integrated Subsystems
 
 | Aspect | Implementation |
 |---|---|
-| 🤖 **Autonomous Workspaces** | 4 specialized AI agents (Architect, DevOps, Security, Code Review) that debate and write code concurrently within the same window. |
-| 🛡️ **Zero-Trust Applets** | Compile React components natively into the WebAssembly/Shadow DOM container by single-clicking them from the UI. |
-| 🌐 **P2P Synapse Routing** | Two Kernos instances can bridge their message buses via WebRTC with a 4-digit PIN, seamlessly sharing cognition and files. |
-| ⏪ **Temporal Branching** | Every system state mutation and command is logged. The OS features a Timeline Slider to revert to the exact millisecond before a disastrous config change. |
-| 🧠 **Nightly Consolidation** | Like human sleep, the kernel performs "RLHF Pruning" overnight, summarizing its past mistakes into permanent behavioral weights to mathematically improve its intelligence. |
+| 🤖 **Autonomous Workspaces** | Specialized AI agents (Architect, DevOps, Security, Code Review) dynamically orchestrate tasks within the React environment. |
+| 🛡️ **Zero-Trust Applets** | Compile React components natively into the WebAssembly/Shadow DOM container using embedded `esbuild` for strict isolation. |
+| 🌐 **WebRTC Subnet Routing** | Two Kernos instances can bridge their message buses via WebRTC, establishing peer-to-peer data channels for distributed execution. |
+| ⏪ **Temporal Branching** | Every system state mutation and command is logged to an immutable timeline, enabling rollback capabilities. |
+| 🧠 **Contrastive RLHF** | The kernel performs nightly consolidation, contrasting high-reward execution paths against failures to continually update system prompt weights. |
 
 ---
 

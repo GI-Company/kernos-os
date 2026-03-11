@@ -6,9 +6,9 @@
 **Author:** Kernos Foundation
 
 ### 1. The Death of the Dumb Terminal
-For fifty years, operating systems have been "dumb" state machines. From UNIX to Windows, the OS waits for an explicit command, executes it blindly, and returns the output. It has no memory of past intent, no understanding of semantics, and no capacity to anticipate future needs. Artificial Intelligence has been shoehorned into these legacy architectures as an external "App" — a chatbot that lives in user-space, entirely disconnected from the kernel's process scheduler, memory manager, and filesystem.
+For fifty years, operating systems have functioned as deterministic state machines. From UNIX to Windows, the OS waits for an explicit command, executes it, and returns the output. Historically, Artificial Intelligence has been integrated as an external application layer entirely disconnected from the kernel's process scheduler, memory manager, and filesystem.
 
-**Kernos OS is the intellectual departure.** It is the world’s first operating system modeled explicitly as a biological organism. The kernel is not a dumb router; it is a **Cognitive Microkernel** possessing perception, memory, and speculative foresight.
+**Kernos OS explores an alternative paradigm.** It is a browser-based operating system simulation built with a Go microkernel and a React frontend. The primary research goal is to demonstrate how cognitive routing, vector memory, and speculative execution can be integrated directly into the kernel's IPC layer, transforming the computing device into an anticipating intellectual partner.
 
 ---
 
@@ -21,13 +21,17 @@ Traditional operating systems use hierarchical folder structures (e.g., `/usr/bi
 Kernos OS replaces the File Allocation Table with a **Synaptic Vector Graph**. Every file, command output, and system configuration is continuously ingested into a 768-dimensional latent space using embedded Nomic text embeddings. 
 **The Result:** The OS experiences "Digital Memory." The user does not ask "where is file X?" The OS already knows, because the mathematical resonance between the user's current task and the historical file brings the memory to the forefront of the cognitive context window before the user explicitly requests it.
 
-### II. Hallucinatory RAG (Retrieval-Augmented Generation)
-Kernos OS harnesses the defining feature of Large Language Models — their tendency to hallucinate — not as a bug, but as a feature. The Dispatcher Agent continuously hallucinates 3 to 10 potential terminal commands and code completions simultaneously in a background thread. 
-Using localized **Retrieval-Augmented Generation**, the kernel injects the Synaptic Vector Graph into the LLM's system prompt in real-time. This provides the AI with absolute contextual mastery over the workspace.
+### II. Speculative RAG (Zero-Latency Anticipation)
+Rather than waiting for user input, the Dispatcher Agent continuously evaluates the user's partial keystrokes and context. The Prediction Engine synthesizes the most probable next command and forwards it to the `ShadowEngine`. 
+This subsystem executes the speculated command in an isolated, hidden Go sandbox (a 10-second `tmp` jail). If the user ultimately hits 'Enter' on the correctly predicted command, the kernel returns the pre-computed `stdout` instantly, achieving perceived zero-latency execution via "Speculative RAG."
 
-### III. Mutating DAGs (Speculative Engine)
-Sequential bash scripts are brittle. If one command fails, the script dies. Kernos executes multi-step biological operations using **Mutating Directed Acyclic Graphs (DAGs)**.
-When the user issues a high-level command ("Build a React app and deploy it"), the Architect agent constructs a dependency graph of commands. If an intermediate step fails (e.g., `npm ERR!`), the OS *does not panic*. The Architect agent dynamically mutates the DAG — adding troubleshooting nodes, bypassing broken dependencies, and healing the execution graph in real-time.
+### III. Concurrent DAG Mutation (Parallel Self-Healing)
+Sequential bash scripts are inherently brittle. Kernos approaches multi-step operations using Directed Acyclic Graphs (DAGs) orchestrated by an autonomous Task Engine.
+If an intermediate node fails (e.g., a missing dependency), the Task Engine pauses execution. It prompts the Architect Agent to synthesize multiple, divergent recovery paths. The engine then executes these alternative bash scripts concurrently in separate goroutines. The first branch to exit successfully collapses the state (a parallel race-condition), dynamically grafting the winning node into the DAG and allowing execution to proceed autonomously.
+
+### IV. Contrastive RLHF (Scalar Reward Memory)
+To ensure the system improves over time, Kernos utilizes a nightly consolidation routine. Every executed DAG is logged into a local SQLite database with a scalar reward (+1.0 for success, -1.0 for failure/timeout). 
+During idle periods, the Architect Agent analyzes these trajectories, contrasting the high-reward "Golden Paths" against the negative-reward "Anti-Patterns." It synthesizes these gradients into actionable structural rules, appending them directly to the system prompt matrix of all embedded agents to permanently alter their behavior.
 
 ---
 
@@ -46,10 +50,10 @@ The user hits a local URL (`http://localhost:3000`), and a full Window Manager, 
 
 ---
 
-## 4. WebRTC Peer-to-Peer Subconscious Sync
+## 4. WebRTC Peer-to-Peer Data Channels
 
-Kernos OS does not rely on centralized cloud services (e.g., iCloud, OneDrive). It establishes direct **P2P WebRTC DataChannels** between instances. 
-By typing a 4-digit PIN, two Kernos OS users can merge their Message Buses. This effectively wires two separate operating systems into a single shared "brain." A command typed on User A's terminal executes on User B's machine, governed by Cryptographic Capability-Based Security. 
+Kernos OS implements decentralized collaboration via direct **P2P WebRTC DataChannels**. 
+The Go backend (`p2p_gateway.go`) acts as a signaling relay, allowing two browser clients to exchange ICE candidates and SDP offers/answers using a 4-digit PIN. Once the connection is established, the WebRTC channel bridges the WebSocket buses of the two distinct OS instances. A command typed in a shared terminal on User A's machine executes simultaneously on User B's machine, governed by strict topic allowlists. 
 
 ---
 

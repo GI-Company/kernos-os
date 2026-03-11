@@ -109,7 +109,7 @@ func (te *TaskEngine) ValidateAndExecute(graphID string, nodeMap map[string]*Tas
 
 		// Log Telemetry (RLHF prep)
 		if GlobalTelemetry != nil {
-			go GlobalTelemetry.LogDagExecution(graphID, prompt, "ERROR", reason)
+			go GlobalTelemetry.LogDagExecution(graphID, prompt, "ERROR", reason, -2.0)
 		}
 		return
 	}
@@ -189,6 +189,11 @@ func (te *TaskEngine) ValidateAndExecute(graphID string, nodeMap map[string]*Tas
 			Time:    time.Now().Format(time.RFC3339),
 			Payload: map[string]string{"runId": graphID},
 		})
+
+		// Emit positive RLHF scalar reward
+		if GlobalTelemetry != nil {
+			go GlobalTelemetry.LogDagExecution(graphID, "Task execution graph succeeded", "SUCCESS", "", 1.0)
+		}
 	}()
 }
 
@@ -268,36 +273,76 @@ func (te *TaskEngine) AttemptDagMutation(graphID string, failedNode *TaskNode, n
 		}
 	}
 
-	prompt := fmt.Sprintf(`The Task Pipeline encountered a failure at node '%s'.
+	prompt := fmt.Sprintf(`The Task Pipeline failed at node '%s'.
 Command: %s
 This node failed to execute.
 %s
-You must GRAFT a recovery node into the DAG. 
-Generate a short recovery bash command (e.g. 'npm install', 'go mod tidy', 'rm -rf node_modules').
-Output ONLY the raw command string, nothing else. If you cannot recover, output "FATAL".`, failedNode.ID, failedNode.Command, semanticContext)
+You must GRAFT recovery paths into the DAG. 
+Generate exactly TWO distinct, alternative bash commands to recover (e.g. branch 1: 'npm install --legacy-peer-deps', branch 2: 'rm -rf node_modules && npm install').
+Output ONLY the two raw command strings separated by a newline. Do not include branch labels or markup. If you cannot recover, output "FATAL".`, failedNode.ID, failedNode.Command, semanticContext)
 
 	resp, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, prompt, nil)
 	if err != nil {
 		return nil
 	}
 
-	recoveryCmd := strings.TrimSpace(resp)
-	recoveryCmd = strings.TrimPrefix(recoveryCmd, "`")
-	recoveryCmd = strings.TrimSuffix(recoveryCmd, "`")
-
-	if recoveryCmd == "FATAL" || recoveryCmd == "" || strings.Contains(strings.ToLower(recoveryCmd), "fatal") {
+	recoveryCmds := strings.Split(strings.TrimSpace(resp), "\n")
+	if len(recoveryCmds) == 0 || strings.Contains(strings.ToLower(recoveryCmds[0]), "fatal") {
 		return nil
 	}
 
-	log.Printf("[TaskEngine] Architect synthesized recovery node: %s", recoveryCmd)
+	// Clean up parsed commands
+	var safeCmds []string
+	for _, c := range recoveryCmds {
+		clean := strings.TrimSpace(c)
+		clean = strings.TrimPrefix(clean, "`")
+		clean = strings.TrimSuffix(clean, "`")
+		if clean != "" && clean != "FATAL" {
+			safeCmds = append(safeCmds, clean)
+		}
+	}
 
-	// Graft new node into the DAG
+	if len(safeCmds) == 0 {
+		return nil
+	}
+
+	log.Printf("[TaskEngine] 🧬 Architect synthesized %d divergent reality branches. Initiating quantum race...", len(safeCmds))
+	
+	// Phase 14: Quantum Parallel Race-Condition
+	// We execute all divergent branches simultaneously. The first to exit 0 collapses the wave function.
+	winnerChan := make(chan string, len(safeCmds))
+
+	for i, cmdStr := range safeCmds {
+		go func(branchID int, cmd string) {
+			log.Printf("   -> [Branch %d]: %s", branchID, cmd)
+			reqID := fmt.Sprintf("%s-branch%d", failedNode.ID, branchID)
+			_, err := ExecuteSafeCommand(reqID, cmd, []string{})
+			if err == nil {
+				winnerChan <- cmd
+			}
+		}(i+1, cmdStr)
+	}
+
+	// Wait up to 30 seconds for a winner
+	var winningCmd string
+	select {
+	case winningCmd = <-winnerChan:
+		log.Printf("[TaskEngine] 🥇 Branch won the race and collapsed the wave function: %s", winningCmd)
+	case <-time.After(30 * time.Second):
+		log.Printf("[TaskEngine] 💀 All divergent branches failed or timed out.")
+		if GlobalTelemetry != nil {
+			go GlobalTelemetry.LogDagExecution(failedNode.ID, failedNode.Command, "ERROR", "Quantum branch collapse failed (timeout)", -1.0)
+		}
+		return nil
+	}
+
+	// Graft the winning node into the DAG
 	newNodeID := failedNode.ID + "-recovery"
 	newNode := &TaskNode{
 		ID:           newNodeID,
-		Command:      recoveryCmd,
+		Command:      winningCmd,
 		Dependencies: []string{}, // Recover immediately
-		Status:       StatusPending,
+		Status:       StatusCompleted, // It already ran successfully during the race
 	}
 
 	nodeMap[newNode.ID] = newNode

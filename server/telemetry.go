@@ -38,7 +38,7 @@ func InitTelemetry() {
 		return
 	}
 
-	// Create table if not exists
+	// Create table if not exists with reward_score tracking for Phase 15 RLHF
 	schema := `
 	CREATE TABLE IF NOT EXISTS dag_executions (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,13 +46,17 @@ func InitTelemetry() {
 		graph_id TEXT,
 		prompt TEXT,
 		outcome TEXT,
-		error_log TEXT
+		error_log TEXT,
+		reward_score REAL DEFAULT 0.0
 	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		log.Printf("[Telemetry] Error creating schema: %v", err)
 		return
 	}
+
+	// Ensure the column exists for existing DBs
+	db.Exec(`ALTER TABLE dag_executions ADD COLUMN reward_score REAL DEFAULT 0.0;`)
 
 	GlobalTelemetry = &TelemetryLogger{db: db}
 	log.Printf("[Telemetry] Started local RLHF memory database at %s", dbPath)
@@ -61,44 +65,77 @@ func InitTelemetry() {
 	go GlobalTelemetry.sweepOldLogs()
 }
 
-func (t *TelemetryLogger) LogDagExecution(graphID, prompt, outcome, errorLog string) {
+func (t *TelemetryLogger) LogDagExecution(graphID, prompt, outcome, errorLog string, reward float64) {
 	if t == nil || t.db == nil {
 		return
 	}
 
-	query := `INSERT INTO dag_executions (graph_id, prompt, outcome, error_log) VALUES (?, ?, ?, ?)`
-	_, err := t.db.Exec(query, graphID, prompt, outcome, errorLog)
+	query := `INSERT INTO dag_executions (graph_id, prompt, outcome, error_log, reward_score) VALUES (?, ?, ?, ?, ?)`
+	_, err := t.db.Exec(query, graphID, prompt, outcome, errorLog, reward)
 	if err != nil {
 		log.Printf("[Telemetry] Failed to log DAG execution: %v", err)
 	} else {
-		log.Printf("[Telemetry] Logged execution %s -> %s", graphID, outcome)
+		log.Printf("[Telemetry] Logged execution %s -> %s (Reward: %.1f)", graphID, outcome, reward)
 	}
 }
 
-// FetchFailedExecutions retrieves error/aborted logs for the RLHF consolidation script
-func (t *TelemetryLogger) FetchFailedExecutions(since time.Time) ([]map[string]string, error) {
+func (t *TelemetryLogger) FetchFailedExecutions(since time.Time) ([]map[string]interface{}, error) {
 	if t == nil || t.db == nil {
 		return nil, nil
 	}
 
-	query := `SELECT prompt, outcome, error_log FROM dag_executions WHERE outcome != 'SUCCESS' AND timestamp >= ? ORDER BY timestamp DESC`
+	query := `SELECT prompt, outcome, error_log, reward_score FROM dag_executions WHERE outcome != 'SUCCESS' AND timestamp >= ? ORDER BY reward_score ASC, timestamp DESC LIMIT 20`
 	rows, err := t.db.Query(query, since)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var results []map[string]string
+	var results []map[string]interface{}
 	for rows.Next() {
 		var prompt, outcome, errorLog string
-		if err := rows.Scan(&prompt, &outcome, &errorLog); err != nil {
+		var reward float64
+		if err := rows.Scan(&prompt, &outcome, &errorLog, &reward); err != nil {
 			continue
 		}
 
-		results = append(results, map[string]string{
+		results = append(results, map[string]interface{}{
 			"prompt":    prompt,
 			"outcome":   outcome,
 			"error_log": errorLog,
+			"reward":    reward,
+		})
+	}
+
+	return results, nil
+}
+
+// FetchSuccessfulExecutions retrieves high-value "Golden Paths" for positive reinforcement
+func (t *TelemetryLogger) FetchSuccessfulExecutions(since time.Time) ([]map[string]interface{}, error) {
+	if t == nil || t.db == nil {
+		return nil, nil
+	}
+
+	query := `SELECT prompt, outcome, error_log, reward_score FROM dag_executions WHERE outcome == 'SUCCESS' AND timestamp >= ? ORDER BY reward_score DESC, timestamp DESC LIMIT 10`
+	rows, err := t.db.Query(query, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var prompt, outcome, errorLog string
+		var reward float64
+		if err := rows.Scan(&prompt, &outcome, &errorLog, &reward); err != nil {
+			continue
+		}
+
+		results = append(results, map[string]interface{}{
+			"prompt":    prompt,
+			"outcome":   outcome,
+			"error_log": errorLog,
+			"reward":    reward,
 		})
 	}
 
