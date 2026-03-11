@@ -97,10 +97,11 @@ By decoupling the UI from the execution layer via the WebSocket Envelope protoco
 
 ---
 
-## 📚 Technical & Commercial Documentation
+## 📚 Technical & Academic Documentation
 
-- [The Kernos OS Whitepaper](./KERNOS_OS_WHITEPAPER.md) - Deep dive into Kernel architecture and cognitive systems.
-- [The Formal Valuation Paper](./KERNOS_OS_VALUATION.md) - Market analysis, enterprise viability, and intellectual property value.
+- [The Kernos OS Research Paper](./KERNOS_OS_RESEARCH_PAPER.md) - Formal academic exploration of the Cognitive Microkernel framework.
+- [The Kernos OS Whitepaper](./KERNOS_OS_WHITEPAPER.md) - Deep dive into Kernel architecture and intelligent sub-systems.
+- [The Commercial Analysis](./KERNOS_OS_VALUATION.md) - Market viability and technical implementation review.
 
 ---
 
