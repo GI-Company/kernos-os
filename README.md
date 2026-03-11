@@ -15,7 +15,7 @@
 <br />
 
 <div align="center">
-  <img src="demo.webp" alt="Kernos OS Demo" width="100%" />
+  <video src="kernos_linkedin_demo.mp4" width="100%" autoplay loop muted playsinline controls></video>
 </div>
 
 <br />
