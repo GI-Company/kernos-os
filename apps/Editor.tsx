@@ -56,7 +56,14 @@ export const EditorApp: React.FC<EditorProps> = (props) => {
       kernel.publish('vfs:write', { _request_id: reqId, id: props.fileId, content });
       setIsDirty(false);
     } else {
-      alert("Save as not implemented in mock. Open a file from filesystem first.");
+      // Create a new file in the VFS
+      const name = prompt('Save as:', 'untitled.ts');
+      if (name) {
+        kernel.publish('vfs:create', { _request_id: Math.random().toString(), parentId: 'home', name, type: 'file', content });
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+        setIsDirty(false);
+      }
     }
   };
 
@@ -151,20 +158,8 @@ export const EditorApp: React.FC<EditorProps> = (props) => {
             typingTimeoutRef.current = setTimeout(() => {
               kernel.publish('editor.typing', {
                 filename: props.fileName || 'Untitled',
-                snippet: newContent.substring(newContent.length - 1000) // send last 1000 chars context
+                snippet: newContent.substring(Math.max(0, newContent.length - 1000))
               });
-
-              if (kernel.isLive && (kernel as any).socket) {
-                (kernel as any).socket.send(JSON.stringify({
-                  topic: 'editor.typing',
-                  from: kernel.getClientId(),
-                  payload: {
-                    filename: props.fileName || 'Untitled',
-                    snippet: newContent.substring(Math.max(0, newContent.length - 1000))
-                  },
-                  time: new Date().toISOString()
-                }));
-              }
             }, 1500); // 1.5s debounce
           }}
           spellCheck={false}

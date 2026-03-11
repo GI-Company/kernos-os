@@ -65,17 +65,8 @@ export const AgentMonitorApp: React.FC = () => {
     }, []);
 
     const pingAgent = (agentId: string) => {
-        if (kernel.isLive && (kernel as any).socket) {
-            const env = {
-                topic: 'agent.ping',
-                from: kernel.getClientId(),
-                to: agentId,
-                payload: { msg: 'ping' },
-                time: new Date().toISOString()
-            };
-            (kernel as any).socket.send(JSON.stringify(env));
-            setPingResults(prev => new Map(prev).set(agentId, 'Pinging...'));
-        }
+        kernel.sendToAgent(agentId, 'agent.ping', { msg: 'ping' });
+        setPingResults(prev => new Map(prev).set(agentId, 'Pinging...'));
     };
 
     const agentList: AgentInfo[] = Array.from(agents.values());

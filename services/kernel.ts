@@ -6,6 +6,8 @@ class P2PManager {
     private pc: RTCPeerConnection | null = null;
     private dc: RTCDataChannel | null = null;
     private kernel: Kernel;
+    private isHost: boolean = false;
+    private connectedPin: string = '';
 
     constructor(kernel: Kernel) {
         this.kernel = kernel;
@@ -62,10 +64,9 @@ class P2PManager {
         if (!this.pc || env.topic !== 'p2p.signal:relay') return;
         
         const { targetPin, signalData, senderId } = env.payload;
-        if (targetPin !== this.connectedPin) return; // Not for this session
+        if (targetPin !== this.connectedPin) return;
         
         if (this.isHost) {
-            // Host receives Answers and Guest ICE
             if (signalData.type === 'answer') {
                 await this.pc.setRemoteDescription(new RTCSessionDescription(signalData));
                 console.log("[P2P Host] Remote Answer accepted.");
@@ -73,7 +74,6 @@ class P2PManager {
                 await this.pc.addIceCandidate(new RTCIceCandidate(signalData));
             }
         } else {
-            // Guest receives Offers and Host ICE
             if (signalData.type === 'offer') {
                 await this.pc.setRemoteDescription(new RTCSessionDescription(signalData));
                 const answer = await this.pc.createAnswer();
@@ -114,12 +114,9 @@ class P2PManager {
                 const env: Envelope = JSON.parse(event.data);
                 console.log("[P2P] Received payload from remote peer:", env.topic);
                 
-                // System P2P topics (auth, topology) passthrough directly
                 if (env.topic.startsWith('p2p.')) {
                      this.kernel.publish(env.topic, env.payload);
                 } else {
-                     // Regular subsystem tasks (vm.spawn, etc) must be wrapped in p2p.route 
-                     // for the backend Gateway's zero-trust inspection
                      this.kernel.publish('p2p.route', {
                          topic: env.topic,
                          from: env.from || 'remote-peer',
@@ -135,10 +132,9 @@ class P2PManager {
 }
 
 /**
- * The Kernel acts as the bridge between the UI and the Execution Environment.
- * It supports two modes:
- * 1. SIMULATION (Default): Mocks responses using setTimeout.
- * 2. LIVE: Connects via WebSocket to a real Go server.
+ * The Kernel bridges the UI and the Go Execution Environment.
+ * It auto-connects to the WebSocket backend on construction.
+ * All communication flows through the real backend — no simulation mode.
  */
 class Kernel {
     private listeners: Set<BusListener> = new Set();
@@ -150,45 +146,32 @@ class Kernel {
     private socket: WebSocket | null = null;
     public isLive: boolean = false;
     private url: string = 'ws://localhost:8080/ws';
-
-    // Mock VFS State (For Simulation Mode)
-    private vfs: Record<string, FileNode> = {
-        'root': { id: 'root', name: 'root', type: 'directory', children: ['home'], parentId: null },
-        'home': { id: 'home', name: 'home', type: 'directory', children: ['welcome', 'docs', 'bin'], parentId: 'root' },
-        'docs': { id: 'docs', name: 'docs', type: 'directory', children: ['specs'], parentId: 'home' },
-        'specs': { id: 'specs', name: 'specs.txt', type: 'file', parentId: 'docs', content: 'Kernos OS Specifications...' },
-        'welcome': { id: 'welcome', name: 'welcome.md', type: 'file', parentId: 'home', content: '# Welcome to Kernos\n\nThis is a browser-native OS.\nConnects to a Go Kernel via WebSockets.\n\nTry opening the Terminal and typing `help`.\n\nDouble click files in the File System to edit them.' },
-        'bin': { id: 'bin', name: 'bin', type: 'directory', children: [], parentId: 'home' }
-    };
+    private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor() {
         this.p2p = new P2PManager(this);
-        
-        // Start Heartbeat
-        setInterval(() => {
-            if (!this.isLive) {
-                this.publishInternal('system.status', { cpu: Math.random() * 20 + 10, memory: Math.random() * 40 + 20 });
-            }
-        }, 2000);
+        // Auto-connect to the real backend
+        this.connect();
     }
 
     // --- Connection Management ---
 
-    public connect(url: string = 'ws://localhost:8080/ws') {
+    public connect(url?: string) {
+        if (url) this.url = url;
         if (this.socket) this.socket.close();
-        this.url = url;
 
         try {
-            this.socket = new WebSocket(url);
+            this.socket = new WebSocket(this.url);
 
             this.socket.onopen = () => {
-                console.log('[Kernel] Connected to Real Backend');
+                console.log('[Kernel] ✅ Connected to Real Backend');
                 this.isLive = true;
+                if (this.reconnectTimer) {
+                    clearTimeout(this.reconnectTimer);
+                    this.reconnectTimer = null;
+                }
 
-                // -------------------------------------------------------------
-                // 1. ZERO-TRUST AUTHENTICATION
-                // Extract the token from the URL hash and authenticate immediately.
-                // -------------------------------------------------------------
+                // Zero-Trust Authentication
                 const hashParts = window.location.hash.split('auth=');
                 const token = hashParts.length > 1 ? hashParts[1] : '';
 
@@ -200,7 +183,7 @@ class Kernel {
                 };
                 this.socket!.send(JSON.stringify(authEnv));
 
-                // 2. Register this UI client
+                // Register this UI client
                 const regEnv: Envelope = {
                     topic: 'sys.register',
                     from: this.clientId,
@@ -221,22 +204,38 @@ class Kernel {
             };
 
             this.socket.onclose = () => {
-                console.log('[Kernel] Disconnected');
+                console.log('[Kernel] ❌ Disconnected from backend');
                 this.isLive = false;
                 this.socket = null;
                 this.broadcast({ topic: 'system.disconnect', from: 'kernel', payload: { status: 'disconnected' }, time: new Date().toISOString() });
+                
+                // Auto-reconnect after 3 seconds
+                if (!this.reconnectTimer) {
+                    this.reconnectTimer = setTimeout(() => {
+                        console.log('[Kernel] 🔄 Attempting reconnect...');
+                        this.connect();
+                    }, 3000);
+                }
             };
 
             this.socket.onerror = (err) => {
-                console.error('[Kernel] Socket Error', err);
+                console.warn('[Kernel] Socket error — backend may not be running. Will retry in 3s.', err);
             };
 
         } catch (e) {
             console.error("Connection failed", e);
+            // Retry after 3 seconds
+            if (!this.reconnectTimer) {
+                this.reconnectTimer = setTimeout(() => this.connect(), 3000);
+            }
         }
     }
 
     public disconnect() {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
         if (this.socket) {
             this.socket.close();
             this.socket = null;
@@ -262,19 +261,19 @@ class Kernel {
         };
 
         // Log locally
-        this.messageLog = [envelope, ...this.messageLog].slice(0, 100);
+        this.messageLog = [envelope, ...this.messageLog].slice(0, 200);
 
-        // Decision: Send to Real Socket or Mock Kernel?
         if (this.isLive && this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify(envelope));
         } else {
-            // Fallback to Simulation
-            this.processMockEnvelope(envelope);
+            // Backend is not connected — broadcast locally for UI echo only
+            console.warn(`[Kernel] Bus offline — "${topic}" broadcast locally only`);
+            this.broadcast(envelope);
         }
     }
 
     private handleIncoming(envelope: Envelope) {
-        this.messageLog = [envelope, ...this.messageLog].slice(0, 100);
+        this.messageLog = [envelope, ...this.messageLog].slice(0, 200);
         
         // Let P2P Manager sniff signaling prior to UI broadcast
         if (envelope.topic === 'p2p.signal:relay') {
@@ -287,11 +286,6 @@ class Kernel {
 
     private broadcast(envelope: Envelope) {
         this.listeners.forEach(l => l(envelope));
-    }
-
-    private publishInternal(topic: string, payload: any) {
-        const envelope: Envelope = { topic, from: 'kernel', payload, time: new Date().toISOString() };
-        this.broadcast(envelope);
     }
 
     public getTrafficLog() { return this.messageLog; }
@@ -307,7 +301,7 @@ class Kernel {
             payload,
             time: new Date().toISOString()
         };
-        this.messageLog = [envelope, ...this.messageLog].slice(0, 100);
+        this.messageLog = [envelope, ...this.messageLog].slice(0, 200);
         if (this.isLive && this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify(envelope));
         }
@@ -318,76 +312,6 @@ class Kernel {
      */
     public getSocket(): WebSocket | null {
         return this.socket;
-    }
-
-
-    // --- MOCK IMPLEMENTATION (Legacy/Fallback) ---
-
-    private processMockEnvelope(envelope: Envelope) {
-        this.broadcast(envelope); // Echo back to UI
-
-        if (envelope.topic.startsWith('vm.')) this.handleMockVM(envelope);
-        if (envelope.topic.startsWith('ai.')) this.handleMockAI(envelope);
-        if (envelope.topic.startsWith('vfs:')) this.handleMockVFS(envelope);
-        if (envelope.topic.startsWith('task.')) this.handleMockTask(envelope);
-        if (envelope.topic.startsWith('pkg.')) this.handleMockPkg(envelope);
-    }
-
-    // ... (Keep existing Mock Handlers below, condensed for brevity) ...
-
-    private handleMockVM(env: Envelope) {
-        // (Existing VM Mock Logic - kept for offline mode)
-        const { _request_id, cmd, args, cwd } = env.payload;
-        setTimeout(() => {
-            if (cmd === 'echo') {
-                this.publishInternal('vm.stdout', { _request_id, text: args.join(' ') + '\n' });
-            } else if (cmd === 'ls') {
-                // Basic LS mock
-                const files = Object.values(this.vfs).filter(f => f.parentId === (cwd || 'home')).map(f => f.name);
-                this.publishInternal('vm.stdout', { _request_id, text: files.join('  ') + '\n' });
-            } else {
-                this.publishInternal('vm.stdout', { _request_id, text: `(SIMULATED) Executed: ${cmd}\n` });
-            }
-            this.publishInternal('vm.exit', { _request_id, code: 0 });
-        }, 100);
-    }
-
-    private handleMockAI(env: Envelope) {
-        if (env.topic !== 'ai.chat') return;
-        setTimeout(() => this.publishInternal('ai.stream', { _request_id: env.payload._request_id, chunk: "I am a simulated AI running in the browser. " }), 500);
-        setTimeout(() => this.publishInternal('ai.done', { _request_id: env.payload._request_id }), 1000);
-    }
-
-    private handleMockVFS(env: Envelope) {
-        // Basic read/write mocks to keep app functional without backend
-        const { _request_id, id, content, path } = env.payload;
-        if (env.topic === 'vfs:read') {
-            const file = this.vfs[id];
-            this.publishInternal('vfs:read:resp', { _request_id, id, content: file ? file.content : '', name: file?.name || 'unknown' });
-        }
-        if (env.topic === 'vfs:list') {
-            const target = path || 'home';
-            const files = Object.values(this.vfs).filter(f => f.parentId === target);
-            this.publishInternal('vfs:list:resp', { _request_id, files, path: target });
-        }
-        if (env.topic === 'vfs:write') {
-            if (this.vfs[id]) this.vfs[id].content = content;
-            this.publishInternal('vfs:write:ack', { _request_id, id });
-        }
-    }
-
-    private handleMockTask(env: Envelope) {
-        if (env.topic === 'task.run') {
-            this.publishInternal('task.run:ack', { _request_id: env.payload._request_id, runId: 'sim-run-1' });
-            setTimeout(() => this.publishInternal('task.done', { runId: 'sim-run-1' }), 2000);
-        }
-    }
-
-    private handleMockPkg(env: Envelope) {
-        if (env.topic === 'pkg.install') {
-            this.publishInternal('pkg.install:ack', { _request_id: env.payload._request_id, runId: 'sim-pkg-1' });
-            setTimeout(() => this.publishInternal('pkg.install:done', { pkgName: env.payload.pkgName }), 1500);
-        }
     }
 }
 

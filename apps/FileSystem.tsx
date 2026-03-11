@@ -6,10 +6,12 @@ import { Folder, FileText, ChevronRight, Home, RefreshCw, FilePlus, FolderPlus, 
 
 export const FileSystemApp: React.FC = () => {
   const [files, setFiles] = useState<FileNode[]>([]);
-  const [currentPath, setCurrentPath] = useState('home');
+  const [pathStack, setPathStack] = useState<string[]>(['home']);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { openWindow } = useOS();
+
+  const currentPath = pathStack[pathStack.length - 1];
 
   const refresh = () => {
       setIsLoading(true);
@@ -21,126 +23,148 @@ export const FileSystemApp: React.FC = () => {
     refresh();
     const unsub = kernel.subscribe((env: Envelope) => {
         if (env.topic === 'vfs:list:resp') {
-            // Only update if the response corresponds to our current path or we are waiting
-            // In a real app we'd match _request_id
             if (env.payload.path === currentPath) {
-                setFiles(env.payload.files);
+                setFiles(env.payload.files || []);
                 setIsLoading(false);
             }
         }
         
-        // Listen for VFS changes via the watch topic
-        if (env.topic === 'vfs:watch') {
-            const { parentId } = env.payload;
-            // If the change occurred in the current directory (or affects it), refresh.
-            if (parentId === currentPath) {
-                refresh();
-            }
+        // Listen for live VFS changes from the filesystem watcher
+        if (env.topic === 'vfs.changed') {
+            // Refresh if any change is detected (real-time updates)
+            refresh();
+        }
+
+        // Handle create/delete/rename acknowledgments
+        if (env.topic === 'vfs:create:ack' || env.topic === 'vfs:delete:ack' || env.topic === 'vfs:rename:ack') {
+            refresh();
         }
     });
     return unsub;
   }, [currentPath]);
 
+  const navigateTo = (id: string) => {
+    setPathStack(prev => [...prev, id]);
+    setSelectedId(null);
+  };
+
+  const navigateUp = () => {
+    if (pathStack.length > 1) {
+      setPathStack(prev => prev.slice(0, -1));
+      setSelectedId(null);
+    }
+  };
+
+  const navigateToBreadcrumb = (index: number) => {
+    setPathStack(prev => prev.slice(0, index + 1));
+    setSelectedId(null);
+  };
+
   const handleDoubleClick = (file: FileNode) => {
-      if (file.type === 'directory') {
-          setCurrentPath(file.id);
-      } else {
-          openWindow('editor', file.name, { fileId: file.id, fileName: file.name });
-      }
+    if (file.type === 'directory') {
+      navigateTo(file.id);
+    } else {
+      openWindow('editor', file.name, { fileId: file.id, fileName: file.name });
+    }
   };
 
   const handleCreate = (type: 'file' | 'directory') => {
-      const name = prompt(`Enter ${type} name:`);
-      if (name) {
-          const reqId = Math.random().toString();
-          kernel.publish('vfs:create', { 
-              _request_id: reqId, 
-              parentId: currentPath, 
-              name, 
-              type 
-          });
-      }
+    const name = prompt(`Enter ${type} name:`);
+    if (name) {
+      kernel.publish('vfs:create', { 
+        _request_id: Math.random().toString(), 
+        parentId: currentPath, 
+        name, 
+        type 
+      });
+    }
   };
 
   const handleRename = () => {
-      if (!selectedId) return;
-      const file = files.find(f => f.id === selectedId);
-      if (!file) return;
-
-      const newName = prompt(`Rename ${file.name} to:`, file.name);
-      if (newName && newName !== file.name) {
-          const reqId = Math.random().toString();
-          kernel.publish('vfs:rename', { _request_id: reqId, id: selectedId, newName });
-      }
+    if (!selectedId) return;
+    const file = files.find(f => f.id === selectedId);
+    if (!file) return;
+    const newName = prompt(`Rename ${file.name} to:`, file.name);
+    if (newName && newName !== file.name) {
+      kernel.publish('vfs:rename', { _request_id: Math.random().toString(), id: selectedId, newName });
+    }
   };
 
   const handleDelete = () => {
-      if (!selectedId) return;
-      if (confirm('Delete selected item?')) {
-        const reqId = Math.random().toString();
-        kernel.publish('vfs:delete', { _request_id: reqId, id: selectedId });
-        setSelectedId(null);
-      }
+    if (!selectedId) return;
+    if (confirm('Delete selected item?')) {
+      kernel.publish('vfs:delete', { _request_id: Math.random().toString(), id: selectedId });
+      setSelectedId(null);
+    }
   };
 
   return (
     <div className="h-full bg-[#18181b] text-gray-200 flex flex-col">
-        {/* Toolbar */}
-        <div className="h-10 border-b border-white/5 flex items-center px-4 gap-2 text-sm bg-white/5">
-            <button onClick={() => setCurrentPath('root')} className="p-1 hover:text-white text-gray-400"><Home size={14} /></button>
-            <ChevronRight size={14} className="text-gray-600" />
-            <span className="font-mono text-cyan-500">{currentPath}</span>
-            <div className="flex-1" />
-            <button onClick={() => handleCreate('file')} className="p-1.5 hover:bg-white/10 rounded text-gray-400" title="New File"><FilePlus size={14}/></button>
-            <button onClick={() => handleCreate('directory')} className="p-1.5 hover:bg-white/10 rounded text-gray-400" title="New Folder"><FolderPlus size={14}/></button>
-            <button onClick={handleRename} className="p-1.5 hover:bg-white/10 rounded text-gray-400" title="Rename"><Edit2 size={14}/></button>
-            <button onClick={handleDelete} className="p-1.5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 rounded" title="Delete"><Trash2 size={14}/></button>
-            <div className="w-px h-4 bg-white/10 mx-2" />
-            <button onClick={refresh} className={`p-1.5 hover:bg-white/10 rounded text-gray-400 ${isLoading ? 'animate-spin' : ''}`}><RefreshCw size={14}/></button>
-        </div>
+      {/* Breadcrumb Toolbar */}
+      <div className="h-10 border-b border-white/5 flex items-center px-4 gap-1 text-sm bg-white/5 overflow-x-auto">
+        <button onClick={() => setPathStack(['root'])} className="p-1 hover:text-white text-gray-400 flex-shrink-0"><Home size={14} /></button>
+        {pathStack.map((segment, i) => (
+          <React.Fragment key={i}>
+            <ChevronRight size={12} className="text-gray-600 flex-shrink-0" />
+            <button
+              onClick={() => navigateToBreadcrumb(i)}
+              className={`font-mono text-xs px-1 py-0.5 rounded hover:bg-white/10 flex-shrink-0 ${
+                i === pathStack.length - 1 ? 'text-cyan-400 font-bold' : 'text-gray-400'
+              }`}
+            >
+              {segment}
+            </button>
+          </React.Fragment>
+        ))}
 
-        {/* Grid */}
-        <div className="p-4 grid grid-cols-4 gap-4 overflow-y-auto flex-1">
-            {currentPath !== 'root' && (
-                <button 
-                    onClick={() => {
-                        // Very naive parent navigation for mock
-                        setCurrentPath('root'); 
-                    }}
-                    className="flex flex-col items-center justify-center p-4 rounded border border-transparent hover:bg-white/5 text-gray-500"
-                >
-                    <Folder size={32} className="text-gray-600" />
-                    <span className="mt-2 text-xs">..</span>
-                </button>
-            )}
-            {files.map(file => {
-                const isMount = !!file.mountSource;
-                return (
-                    <button 
-                        key={file.id}
-                        onClick={() => setSelectedId(file.id)}
-                        onDoubleClick={() => handleDoubleClick(file)}
-                        className={`
-                            flex flex-col items-center justify-center p-4 rounded border transition-colors group relative
-                            ${selectedId === file.id ? 'bg-cyan-500/10 border-cyan-500/50 text-cyan-100' : 'bg-white/5 border-transparent hover:bg-white/10 text-gray-400'}
-                        `}
-                    >
-                        {file.type === 'directory' 
-                            ? (isMount ? <Cloud size={32} className={selectedId === file.id ? 'text-cyan-400' : 'text-blue-400 group-hover:text-blue-300'} /> : <Folder size={32} className={selectedId === file.id ? 'text-cyan-400' : 'text-yellow-500 group-hover:text-yellow-400'} />) 
-                            : <FileText size={32} className={selectedId === file.id ? 'text-cyan-400' : 'text-gray-500 group-hover:text-gray-300'} />
-                        }
-                        <span className="mt-2 text-xs truncate w-full text-center select-none flex items-center justify-center gap-1">
-                            {file.name}
-                            {isMount && <span className="w-1.5 h-1.5 rounded-full bg-green-500" title="Connected"></span>}
-                        </span>
-                    </button>
-                );
-            })}
-        </div>
-        <div className="h-6 bg-[#0f0f13] border-t border-white/5 px-2 text-[10px] text-gray-600 flex items-center justify-between">
-            <span>{files.length} items {isLoading && '(Loading...)'}</span>
-            <span>{selectedId ? `Selected: ${selectedId}` : 'Ready'}</span>
-        </div>
+        <div className="flex-1" />
+        <button onClick={() => handleCreate('file')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 flex-shrink-0" title="New File"><FilePlus size={14}/></button>
+        <button onClick={() => handleCreate('directory')} className="p-1.5 hover:bg-white/10 rounded text-gray-400 flex-shrink-0" title="New Folder"><FolderPlus size={14}/></button>
+        <button onClick={handleRename} className="p-1.5 hover:bg-white/10 rounded text-gray-400 flex-shrink-0" title="Rename"><Edit2 size={14}/></button>
+        <button onClick={handleDelete} className="p-1.5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 rounded flex-shrink-0" title="Delete"><Trash2 size={14}/></button>
+        <div className="w-px h-4 bg-white/10 mx-1" />
+        <button onClick={refresh} className={`p-1.5 hover:bg-white/10 rounded text-gray-400 flex-shrink-0 ${isLoading ? 'animate-spin' : ''}`}><RefreshCw size={14}/></button>
+      </div>
+
+      {/* Grid */}
+      <div className="p-4 grid grid-cols-4 gap-4 overflow-y-auto flex-1">
+        {pathStack.length > 1 && (
+          <button 
+            onClick={navigateUp}
+            className="flex flex-col items-center justify-center p-4 rounded border border-transparent hover:bg-white/5 text-gray-500"
+          >
+            <Folder size={32} className="text-gray-600" />
+            <span className="mt-2 text-xs">..</span>
+          </button>
+        )}
+        {files.map(file => {
+          const isMount = !!file.mountSource;
+          return (
+            <button 
+              key={file.id}
+              onClick={() => setSelectedId(file.id)}
+              onDoubleClick={() => handleDoubleClick(file)}
+              className={`
+                flex flex-col items-center justify-center p-4 rounded border transition-colors group relative
+                ${selectedId === file.id ? 'bg-cyan-500/10 border-cyan-500/50 text-cyan-100' : 'bg-white/5 border-transparent hover:bg-white/10 text-gray-400'}
+              `}
+            >
+              {file.type === 'directory' 
+                ? (isMount ? <Cloud size={32} className={selectedId === file.id ? 'text-cyan-400' : 'text-blue-400 group-hover:text-blue-300'} /> : <Folder size={32} className={selectedId === file.id ? 'text-cyan-400' : 'text-yellow-500 group-hover:text-yellow-400'} />) 
+                : <FileText size={32} className={selectedId === file.id ? 'text-cyan-400' : 'text-gray-500 group-hover:text-gray-300'} />
+              }
+              <span className="mt-2 text-xs truncate w-full text-center select-none flex items-center justify-center gap-1">
+                {file.name}
+                {isMount && <span className="w-1.5 h-1.5 rounded-full bg-green-500" title="Connected"></span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="h-6 bg-[#0f0f13] border-t border-white/5 px-2 text-[10px] text-gray-600 flex items-center justify-between">
+        <span>{files.length} items {isLoading && '(Loading...)'}</span>
+        <span>{selectedId ? `Selected: ${selectedId}` : 'Ready'}</span>
+      </div>
     </div>
   );
 };

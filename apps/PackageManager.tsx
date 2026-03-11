@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { kernel } from '../services/kernel';
 import { Envelope } from '../types';
-import { Package, Download, Check, Loader, Box } from 'lucide-react';
+import { Package, Download, Check, Loader, Box, Search, RefreshCw } from 'lucide-react';
 
 interface PkgInfo {
     name: string;
@@ -10,8 +10,8 @@ interface PkgInfo {
     installed: boolean;
 }
 
-const AVAILABLE_PACKAGES: PkgInfo[] = [
-    { name: 'python', desc: 'Python 3.12 Interpreter (WASM)', version: '3.12.0', installed: false },
+const FALLBACK_PACKAGES: PkgInfo[] = [
+    { name: 'python', desc: 'Python 3.12 Interpreter', version: '3.12.0', installed: false },
     { name: 'rustc', desc: 'Rust Compiler & Cargo', version: '1.75.0', installed: false },
     { name: 'ffmpeg', desc: 'Media processing suite', version: '6.0.0', installed: false },
     { name: 'sqlite', desc: 'SQL Database Engine', version: '3.42.0', installed: false },
@@ -19,20 +19,40 @@ const AVAILABLE_PACKAGES: PkgInfo[] = [
 ];
 
 export const PackageManagerApp: React.FC = () => {
-    const [packages, setPackages] = useState<PkgInfo[]>(AVAILABLE_PACKAGES);
+    const [packages, setPackages] = useState<PkgInfo[]>([]);
     const [installing, setInstalling] = useState<string | null>(null);
     const [progress, setProgress] = useState<string>('');
+    const [filter, setFilter] = useState('');
+    const [loading, setLoading] = useState(true);
+
+    const fetchPackages = () => {
+        setLoading(true);
+        kernel.publish('pkg.list', { _request_id: Math.random().toString() });
+        // Fallback to static list after 2 seconds if no response
+        setTimeout(() => {
+            setPackages(prev => prev.length === 0 ? FALLBACK_PACKAGES : prev);
+            setLoading(false);
+        }, 2000);
+    };
 
     useEffect(() => {
-        // Listen for package install events
+        fetchPackages();
+
         const unsub = kernel.subscribe((env: Envelope) => {
+            if (env.topic === 'pkg.list:resp') {
+                const pkgs = env.payload?.packages || [];
+                if (pkgs.length > 0) {
+                    setPackages(pkgs);
+                    setLoading(false);
+                }
+            }
             if (env.topic === 'pkg.install:done') {
                 const { pkgName } = env.payload;
                 setPackages(prev => prev.map(p => p.name === pkgName ? { ...p, installed: true } : p));
                 setInstalling(null);
                 setProgress('');
             }
-            if (env.topic === 'task.event' && installing && env.payload.runId.startsWith('pkg')) {
+            if (env.topic === 'task.event' && installing && env.payload.runId?.startsWith('pkg')) {
                 const { step, status } = env.payload;
                 if (status === 'running') {
                     setProgress(step);
@@ -45,31 +65,52 @@ export const PackageManagerApp: React.FC = () => {
     const handleInstall = (pkg: PkgInfo) => {
         if (pkg.installed || installing) return;
         setInstalling(pkg.name);
-        const reqId = Math.random().toString();
-        kernel.publish('pkg.install', { _request_id: reqId, pkgName: pkg.name });
+        kernel.publish('pkg.install', { _request_id: Math.random().toString(), pkgName: pkg.name });
     };
 
+    const filtered = filter
+        ? packages.filter(p => p.name.toLowerCase().includes(filter.toLowerCase()) || p.desc.toLowerCase().includes(filter.toLowerCase()))
+        : packages;
+
     return (
-        <div className="h-full bg-[#111115] text-white flex flex-col">
-            <div className="p-4 border-b border-white/5 bg-white/5 flex items-center gap-3">
-                <Package size={20} className="text-cyan-400" />
-                <div>
-                    <h2 className="text-sm font-bold">Kernos Pkg Manager</h2>
-                    <p className="text-[10px] text-gray-500">Official Repository (Main)</p>
+        <div className="h-full bg-[#0a0a0f] text-white flex flex-col">
+            <div className="p-4 border-b border-white/5 bg-white/[0.03]">
+                <div className="flex items-center gap-3 mb-3">
+                    <Package size={20} className="text-cyan-400" />
+                    <div>
+                        <h2 className="text-sm font-bold">Kernos Package Manager</h2>
+                        <p className="text-[10px] text-gray-500">
+                            {loading ? 'Querying registry...' : `${packages.length} packages available`}
+                        </p>
+                    </div>
+                    <div className="flex-1" />
+                    <button onClick={fetchPackages} className="p-1.5 hover:bg-white/10 rounded text-gray-400" title="Refresh">
+                        <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                    </button>
+                </div>
+                <div className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-lg px-3">
+                    <Search size={12} className="text-gray-600" />
+                    <input
+                        type="text"
+                        value={filter}
+                        onChange={e => setFilter(e.target.value)}
+                        placeholder="Search packages..."
+                        className="flex-1 bg-transparent py-1.5 text-gray-300 placeholder-gray-600 outline-none text-xs"
+                    />
                 </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                {packages.map(pkg => (
-                    <div key={pkg.name} className="flex items-center justify-between p-3 rounded bg-white/5 border border-white/5 hover:border-white/10 transition-colors">
+                {filtered.map(pkg => (
+                    <div key={pkg.name} className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/5 hover:border-white/10 transition-colors">
                         <div className="flex items-center gap-4">
-                            <div className="p-2 bg-black/40 rounded text-gray-400">
+                            <div className="p-2 bg-black/40 rounded-lg text-gray-400">
                                 <Box size={20} />
                             </div>
                             <div>
                                 <div className="font-bold text-sm flex items-center gap-2">
                                     {pkg.name}
-                                    <span className="text-[10px] bg-white/10 px-1 rounded text-gray-400">v{pkg.version}</span>
+                                    <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-gray-400">v{pkg.version}</span>
                                 </div>
                                 <div className="text-xs text-gray-500">{pkg.desc}</div>
                             </div>
@@ -85,7 +126,7 @@ export const PackageManagerApp: React.FC = () => {
                                     <span className="text-[10px] text-gray-600 font-mono mt-1">{progress}</span>
                                 </div>
                             ) : pkg.installed ? (
-                                <div className="flex items-center gap-1 text-green-500 text-xs px-3 py-1.5 bg-green-500/10 rounded">
+                                <div className="flex items-center gap-1 text-green-500 text-xs px-3 py-1.5 bg-green-500/10 rounded-lg">
                                     <Check size={14} />
                                     <span>Installed</span>
                                 </div>
@@ -93,7 +134,7 @@ export const PackageManagerApp: React.FC = () => {
                                 <button 
                                     onClick={() => handleInstall(pkg)}
                                     disabled={!!installing}
-                                    className="flex items-center gap-1.5 text-xs bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded transition-colors"
+                                    className="flex items-center gap-1.5 text-xs bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg transition-colors"
                                 >
                                     <Download size={14} />
                                     Get
@@ -102,10 +143,15 @@ export const PackageManagerApp: React.FC = () => {
                         </div>
                     </div>
                 ))}
+                {filtered.length === 0 && !loading && (
+                    <div className="p-8 text-center text-gray-600 italic">
+                        {filter ? `No packages matching "${filter}"` : 'No packages available'}
+                    </div>
+                )}
             </div>
 
             <div className="h-6 bg-black/40 text-[10px] text-gray-600 flex items-center px-4 border-t border-white/5">
-                {installing ? `Processing transaction for ${installing}...` : `${packages.length} packages available.`}
+                {installing ? `Processing transaction for ${installing}...` : `${filtered.length} packages shown`}
             </div>
         </div>
     );
