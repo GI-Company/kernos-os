@@ -1,0 +1,42 @@
+name: Kernos OS CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '22'
+        cache: 'npm'
+        
+    - name: Install Frontend Dependencies
+      run: npm ci
+
+    - name: Run Frontend Tests (Vitest)
+      run: npm run test
+
+    - name: Build Frontend Bundle
+      run: npm run build
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+        
+    - name: Build Go Kernel
+      working-directory: ./server
+      run: go build -o ../kernos .
+
+    - name: Run Go Kernel Tests
+      working-directory: ./server
+      run: go test -v ./...
