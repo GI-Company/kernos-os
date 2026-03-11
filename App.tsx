@@ -54,21 +54,16 @@ const App: React.FC = () => {
         lineIndex++;
       } else {
         clearInterval(interval);
-        // After boot completes, check auth
+        // Boot complete → check local session
         setTimeout(() => {
-          fetch('/auth/me', { credentials: 'include' })
-            .then(r => {
-              if (r.ok) return r.json();
-              throw new Error('Not authenticated');
-            })
-            .then(profile => {
-              setUser(profile);
-              setPhase('desktop');
-            })
-            .catch(() => {
-              setPhase('login');
-            });
-        }, 500);
+          const guestSession = localStorage.getItem('kernos_guest_user');
+          if (guestSession) {
+            setUser(JSON.parse(guestSession));
+            setPhase('desktop');
+          } else {
+            setPhase('login');
+          }
+        }, 600);
       }
     }, 120);
     return () => clearInterval(interval);
@@ -79,12 +74,20 @@ const App: React.FC = () => {
     if (kernel.isLive) {
       window.location.href = '/auth/github';
     } else {
-      // Dev/offline mode — skip to desktop
-      setPhase('desktop');
+      // Dev mode — fallback to guest
+      handleGuestAccess();
     }
   };
 
   const handleGuestAccess = () => {
+    const guestId = Math.random().toString(36).substring(2, 6);
+    const guestUser = {
+      username: `Guest_${guestId}`,
+      avatar_url: `https://api.dicebear.com/7.x/identicon/svg?seed=${guestId}`,
+      role: 'guest'
+    };
+    localStorage.setItem('kernos_guest_user', JSON.stringify(guestUser));
+    setUser(guestUser);
     setPhase('desktop');
   };
 
@@ -124,13 +127,13 @@ const App: React.FC = () => {
               <div
                 key={i}
                 className={`leading-relaxed ${
-                  line.includes('Ready') ? 'text-green-400' :
-                  line.includes('Error') ? 'text-red-400' :
+                  line && line.includes('Ready') ? 'text-green-400' :
+                  line && line.includes('Error') ? 'text-red-400' :
                   'text-cyan-500/70'
                 }`}
                 style={{ animation: 'fadeIn 0.15s ease-in' }}
               >
-                {line}
+                {line || ''}
               </div>
             ))}
             {bootLines.length < BOOT_LINES.length && (
