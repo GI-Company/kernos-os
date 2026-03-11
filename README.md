@@ -56,25 +56,39 @@ Traditional shell scripts run sequentially and fail abruptly. Kernos executes mu
 
 The entire Operating System — the Go microkernel, the React graphical environment, the Nomic vector database, and the Websocket Bus — is statically compiled into a single **19 MB executable.** It has zero external dependencies.
 
-### Standard Boot
+### 1. LM Studio Setup (Required for AI Features)
+
+Kernos OS relies on a local LLM to power its intelligent agents. We recommend using **[LM Studio](https://lmstudio.ai/)**.
+
+1. Download and install LM Studio.
+2. In the search bar, download a capable coding model. We recommend:
+   - `Qwen-2.5-Coder-7B-Instruct` (Fast & capable)
+   - `Llama-3.1-8B-Instruct` (Great reasoning)
+   - `Phi-3.5-mini-instruct` (For lower-end hardware)
+3. Navigate to the **Local Server** tab in LM Studio.
+4. Select your downloaded model and click **Start Server**. Ensure it is running on `http://localhost:1234/v1`.
+
+### 2. Building & Running Kernos OS
+
+You can run the full environment by compiling the Go microkernel. Ensure you have Go 1.23+ and Node.js installed.
 
 ```bash
 git clone https://github.com/GI-Company/kernos-os.git
 cd kernos-os
 
-# Install react deps once
+# 1. Install frontend dependencies
 npm install
 
-# Start the full OS environment
-make dev
+# 2. Build the Go microkernel
+cd server
+go build -o kernos_server
+
+# 3. Start the kernel (connects to LM Studio)
+./kernos_server -lm-url http://localhost:1234/v1/chat/completions
 ```
 
-Open **http://localhost:3000** in your browser.
-
-> **💡 Cognitive Mode:** To awaken the OS, connect it to a local LLM via [LM Studio](https://lmstudio.ai/):
-> ```bash
-> go run ./server -lm-url http://localhost:1234/v1/chat/completions
-> ```
+Once the server is running, the Go backend will automatically serve the React frontend. 
+Open **http://localhost:3000** in your browser to access the Cognitive Desktop.
 
 ---
 
