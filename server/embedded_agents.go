@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -243,7 +245,18 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 				// Inject RAG into System Prompt dynamically
 				finalSystemPrompt := agent.SystemPrompt + ragContext
 
-				response, err := queryLM(agent.LMStudioURL, agent.Model, finalSystemPrompt, msg)
+				response, err := queryLM(agent.LMStudioURL, agent.Model, finalSystemPrompt, msg, func(token string) {
+					streamEnv := agentEnvelope{
+						Topic: "agent.chat:stream",
+						From:  agent.ID,
+						To:    from,
+						Time:  time.Now().Format(time.RFC3339),
+						Payload: map[string]string{
+							"chunk": token,
+						},
+					}
+					_ = conn.WriteJSON(streamEnv)
+				})
 				if err != nil {
 					log.Printf("[%s] LM Studio error: %v", agent.ID, err)
 					response = fmt.Sprintf("Error: %v", err)
@@ -289,6 +302,7 @@ type agentEnvelope struct {
 // LM Studio types
 type lmChatRequest struct {
 	Model    string      `json:"model"`
+	Stream   bool        `json:"stream,omitempty"`
 	Messages []lmMessage `json:"messages"`
 }
 
@@ -305,9 +319,10 @@ type lmChatResponse struct {
 	} `json:"choices"`
 }
 
-func queryLM(apiURL, model, systemPrompt, userMsg string) (string, error) {
+func queryLM(apiURL, model, systemPrompt, userMsg string, onToken func(string)) (string, error) {
 	reqBody := lmChatRequest{
-		Model: model,
+		Model:  model,
+		Stream: onToken != nil,
 		Messages: []lmMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userMsg},
@@ -324,6 +339,44 @@ func queryLM(apiURL, model, systemPrompt, userMsg string) (string, error) {
 		return "", fmt.Errorf("LM Studio unreachable at %s: %w", apiURL, err)
 	}
 	defer resp.Body.Close()
+
+	if reqBody.Stream {
+		reader := bufio.NewReader(resp.Body)
+		var fullContent strings.Builder
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return fullContent.String(), err
+			}
+			lineStr := string(line)
+			if strings.HasPrefix(lineStr, "data: ") {
+				dataStr := strings.TrimSpace(strings.TrimPrefix(lineStr, "data: "))
+				if dataStr == "[DONE]" {
+					break
+				}
+				var chunk struct {
+					Choices []struct {
+						Delta struct {
+							Content string `json:"content"`
+						} `json:"delta"`
+					} `json:"choices"`
+				}
+				if err := json.Unmarshal([]byte(dataStr), &chunk); err == nil {
+					if len(chunk.Choices) > 0 {
+						token := chunk.Choices[0].Delta.Content
+						if token != "" {
+							fullContent.WriteString(token)
+							onToken(token)
+						}
+					}
+				}
+			}
+		}
+		return fullContent.String(), nil
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

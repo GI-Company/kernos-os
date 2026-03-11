@@ -75,7 +75,7 @@ func RunSynapticConsolidation(lmURL string) {
 	}
 
 	// 2. Query Qwen-Thinking to synthesize new lessons
-	response, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, promptBuilder.String())
+	response, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, promptBuilder.String(), nil)
 	if err != nil {
 		log.Printf("[RLHF] ❌ Architect synthesis failed: %v", err)
 		return
@@ -92,7 +92,7 @@ func RunSynapticConsolidation(lmURL string) {
 		log.Println("[RLHF] ⚠️ Synaptic weights exceeding context bounds. Initiating Pruning/Compression...")
 
 		compressionPrompt := "The following rules list has grown too large. Please synthesize, compress, and deduplicate these rules into a core set of maximum 10 fundamental operating principles. Maintain all critical safety limits. Output ONLY the compressed rules.\n\n" + combinedWeights
-		compressedRes, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, compressionPrompt)
+		compressedRes, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, compressionPrompt, nil)
 		if err == nil {
 			finalWeights = stripThinkTags(compressedRes)
 			log.Println("[RLHF] ✂️ Compression successful. Context window restored.")

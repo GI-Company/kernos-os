@@ -90,7 +90,7 @@ If you cannot confidently predict a logical command, output exactly "NONE".`
 	userMsg := "Filename: " + filename + "\n\nCode Snippet:\n" + codeSnippet
 
 	// Query the local model (reuse queryLM from embedded_agents.go)
-	response, err := queryLM(pe.lmURL, pe.dispatcher.Model, systemPrompt, userMsg)
+	response, err := queryLM(pe.lmURL, pe.dispatcher.Model, systemPrompt, userMsg, nil)
 	if err != nil {
 		log.Printf("[Predictor] Error querying model: %v", err)
 		return ""
@@ -197,7 +197,7 @@ If the input ends with a space, predict the next arguments.
 Output ONLY the raw command string, nothing else. No markdown, no prefixes.
 If you cannot confidently predict, output exactly "NONE".`
 		
-		response, err := queryLM(pe.lmURL, pe.dispatcher.Model, systemPrompt, "Partial Input: "+input)
+		response, err := queryLM(pe.lmURL, pe.dispatcher.Model, systemPrompt, "Partial Input: "+input, nil)
 		if err != nil {
 			return
 		}
@@ -247,7 +247,7 @@ func (pe *PredictionEngine) HandleTerminalIntent(env Envelope) {
 Translate their intent into a single, valid, side-effect-free (if possible) bash CLI command.
 Output ONLY the raw bash command string, nothing else. No markdown.`
 
-		response, err := queryLM(pe.lmURL, pe.dispatcher.Model, systemPrompt, "Intent: "+intent)
+		response, err := queryLM(pe.lmURL, pe.dispatcher.Model, systemPrompt, "Intent: "+intent, nil)
 		if err != nil {
 			return
 		}
@@ -282,7 +282,7 @@ Your output must be ONE short hallucinated search query (max 10 words) that capt
 
 	userMsg := "Filename: " + filename + "\n\nSnippet:\n" + snippet
 
-	response, err := queryLM(pe.lmURL, pe.dispatcher.Model, systemPrompt, userMsg)
+	response, err := queryLM(pe.lmURL, pe.dispatcher.Model, systemPrompt, userMsg, nil)
 	if err != nil || response == "" {
 		return
 	}

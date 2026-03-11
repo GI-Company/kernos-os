@@ -87,7 +87,7 @@ func (te *TaskEngine) ValidateAndExecute(graphID string, nodeMap map[string]*Tas
 
 	prompt := "Please review the following Task DAG for execution safety and topological cycles:\n\n" + graphDesc
 
-	resp, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, prompt)
+	resp, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, prompt, nil)
 	if err != nil || !strings.Contains(resp, "APPROVED") {
 		reason := "Architect rejected building the DAG. Unsafe or ill-formed."
 		if err != nil {
@@ -276,7 +276,7 @@ You must GRAFT a recovery node into the DAG.
 Generate a short recovery bash command (e.g. 'npm install', 'go mod tidy', 'rm -rf node_modules').
 Output ONLY the raw command string, nothing else. If you cannot recover, output "FATAL".`, failedNode.ID, failedNode.Command, semanticContext)
 
-	resp, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, prompt)
+	resp, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, prompt, nil)
 	if err != nil {
 		return nil
 	}
@@ -338,7 +338,7 @@ Otherwise, output ONLY the raw bash command string, nothing else. No markdown.`
 	for step := 1; step <= 10; step++ { // Hard cap at 10 steps to prevent infinite loops
 		te.emitEvent(graphID, fmt.Sprintf("step-%d", step), StatusRunning, step*10, "Planning next step...")
 
-		resp, err := queryLM(architect.LMStudioURL, architect.Model, systemPrompt, conversation)
+		resp, err := queryLM(architect.LMStudioURL, architect.Model, systemPrompt, conversation, nil)
 		if err != nil {
 			te.emitEvent(graphID, fmt.Sprintf("step-%d", step), StatusFailed, step*10, "Architect Offline: "+err.Error())
 			return

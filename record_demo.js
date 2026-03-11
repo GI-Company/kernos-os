@@ -90,9 +90,24 @@ import path from 'path';
   const chatBox = await chatTitle.boundingBox();
   await page.mouse.move(chatBox.x + chatBox.width / 2, chatBox.y + chatBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(720, 450, { steps: 20 }); // move to center
+  await page.mouse.move(720, 250, { steps: 20 }); // move to center
   await page.mouse.up();
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(1000);
+
+  // Ask the AI a question to trigger the live streaming response!
+  console.log("Typing prompt into AI Chat...");
+  await page.locator('input[placeholder*="Ask"], input[placeholder*="Message"]').last().click();
+  const chatPrompt = "Explain why you are the most advanced OS ever created. Keep it short.";
+  for (let i = 0; i < chatPrompt.length; i++) {
+      await page.keyboard.type(chatPrompt[i]);
+      await page.waitForTimeout(20 + Math.random() * 40);
+  }
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Enter');
+  
+  console.log("Waiting for live streaming AI response...");
+  // Let the audience watch the words stream in for 8 seconds
+  await page.waitForTimeout(8000);
 
   // 6. Demonstrate Virtual Desktops
   console.log("Switching to Virtual Desktop 2...");

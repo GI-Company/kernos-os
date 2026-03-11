@@ -64,6 +64,7 @@ export const AIChatApp: React.FC = () => {
             if (env.topic === 'agent.chat:reply') {
                 const payload = env.payload as any;
                 const reply = payload?.reply || '(no response)';
+                setStreamBuffer('');
                 setMessages(prev => [...prev, {
                     id: Math.random().toString(36),
                     role: 'agent',
@@ -71,6 +72,13 @@ export const AIChatApp: React.FC = () => {
                     agentId: env.from,
                     time: new Date().toLocaleTimeString()
                 }]);
+                setIsWaiting(false);
+            }
+
+            // Agent streaming
+            if (env.topic === 'agent.chat:stream') {
+                const payload = env.payload as any;
+                setStreamBuffer(prev => prev + (payload.chunk || ''));
                 setIsWaiting(false);
             }
 
@@ -212,7 +220,7 @@ export const AIChatApp: React.FC = () => {
                 {streamBuffer && (
                     <div className="flex justify-start">
                         <div className="max-w-[80%] rounded-xl px-4 py-3 text-sm leading-relaxed bg-white/5 border border-white/5 text-gray-300">
-                            <div className="text-[10px] text-cyan-400 mb-1 font-mono">kernos-lm</div>
+                            <div className="text-[10px] text-cyan-400 mb-1 font-mono">{directMode ? 'kernos-lm' : (currentAgent?.id || 'agent')}</div>
                             <div className="whitespace-pre-wrap">{streamBuffer}<span className="animate-pulse">▊</span></div>
                         </div>
                     </div>

@@ -10,6 +10,9 @@
 
 *The world's first operating system modeled after biological intelligence.*
 
+> **Why "Kernos"?**  
+> In ancient Greek antiquity, a *kernos* was a unique pottery vessel featuring a central base with multiple distinct, isolated cups attached to it. It perfectly represents this OS's architecture: a central, high-speed Go **microkernel** acting as the foundation, holding multiple isolated, autonomous AI **agents** and sandboxes that operate together as a single cognitive entity.
+
 </div>
 
 <br />
