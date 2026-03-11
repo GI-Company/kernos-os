@@ -16,11 +16,7 @@ interface OSStore {
 }
 
 export const useOS = create<OSStore>((set) => ({
-  windows: [
-    { id: '1', appId: 'terminal', title: 'Terminus', x: 50, y: 50, width: 600, height: 400, zIndex: 1, isMinimized: false, isMaximized: false },
-    { id: '2', appId: 'monitor', title: 'Bus Monitor', x: 700, y: 50, width: 400, height: 300, zIndex: 2, isMinimized: false, isMaximized: false },
-    { id: '3', appId: 'ai-chat', title: 'AI Chat', x: 200, y: 80, width: 500, height: 500, zIndex: 3, isMinimized: false, isMaximized: false }
-  ],
+  windows: [],
   shortcuts: [
     {
       id: "cartographer-sc",
