@@ -77,9 +77,28 @@ export const Taskbar: React.FC = () => {
 
         <div className="h-6 w-px bg-white/10 mx-2" />
 
-        {/* Running Windows */}
+        {/* Virtual Desktops */}
+        <div className="flex gap-1 bg-white/5 rounded p-1">
+          {[0, 1, 2, 3].map(idx => (
+            <button
+              key={idx}
+              onClick={() => useOS.getState().switchDesktop(idx)}
+              className={`w-6 h-6 rounded flex items-center justify-center text-xs font-mono transition-colors ${
+                useOS.getState().currentDesktop === idx
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                  : 'text-gray-500 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              {idx + 1}
+            </button>
+          ))}
+        </div>
+
+        <div className="h-6 w-px bg-white/10 mx-2" />
+
+        {/* Running Windows (Current Desktop Only) */}
         <div className="flex gap-2">
-          {windows.map((win) => (
+          {windows.filter(win => win.desktopIndex === useOS.getState().currentDesktop).map((win) => (
             <button
               key={win.id}
               onClick={() => win.id === activeWindowId && !win.isMinimized ? minimizeWindow(win.id) : focusWindow(win.id)}

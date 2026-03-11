@@ -13,6 +13,9 @@ interface OSStore {
   resizeWindow: (id: string, width: number, height: number) => void;
   minimizeWindow: (id: string) => void;
   maximizeWindow: (id: string) => void;
+  currentDesktop: number;
+  switchDesktop: (index: number) => void;
+  moveWindowToDesktop: (id: string, index: number) => void;
 }
 
 export const useOS = create<OSStore>((set) => ({
@@ -32,6 +35,7 @@ export const useOS = create<OSStore>((set) => ({
     }
   ],
   activeWindowId: '3',
+  currentDesktop: 0,
 
   openWindow: (appId, title, data) => set((state) => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -60,6 +64,7 @@ export const useOS = create<OSStore>((set) => ({
       zIndex: state.windows.length + 1,
       isMinimized: false,
       isMaximized: false,
+      desktopIndex: state.currentDesktop,
       data
     };
     return { windows: [...state.windows, newWindow], activeWindowId: id };
@@ -93,5 +98,23 @@ export const useOS = create<OSStore>((set) => ({
 
   maximizeWindow: (id) => set((state) => ({
     windows: state.windows.map(w => w.id === id ? { ...w, isMaximized: !w.isMaximized } : w)
+  })),
+
+  switchDesktop: (index: number) => set((state) => {
+    // Bring focus to the top window of the new desktop
+    const desktopWindows = state.windows.filter(w => w.desktopIndex === index && !w.isMinimized);
+    let topWinId = null;
+    let maxZ = -1;
+    for (const w of desktopWindows) {
+      if (w.zIndex > maxZ) {
+        maxZ = w.zIndex;
+        topWinId = w.id;
+      }
+    }
+    return { currentDesktop: index, activeWindowId: topWinId };
+  }),
+
+  moveWindowToDesktop: (id: string, index: number) => set((state) => ({
+    windows: state.windows.map(w => w.id === id ? { ...w, desktopIndex: index } : w)
   }))
 }));

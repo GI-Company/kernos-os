@@ -24,6 +24,7 @@ export interface WindowState {
   zIndex: number;
   isMinimized: boolean;
   isMaximized: boolean;
+  desktopIndex: number;
   data?: any;
 }
 

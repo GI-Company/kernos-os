@@ -144,6 +144,19 @@ export const Window: React.FC<WindowProps> = ({ data, children }) => {
           ID: {data.id} | MEM: {Math.floor(Math.random() * 128)}MB
         </div>
       </div>
+
+      {/* Visual Snap Indicator */}
+      {isDragging && snapZone && (
+        <div 
+          className="fixed pointer-events-none bg-cyan-500/20 border-2 border-cyan-400/50 rounded-lg shadow-[0_0_30px_rgba(0,240,255,0.2)] transition-all duration-200 z-[9999]"
+          style={{
+            top: 0,
+            left: snapZone === 'right' ? '50%' : 0,
+            width: snapZone === 'top' ? '100%' : '50%',
+            height: snapZone === 'top' ? '100%' : '100%',
+          }}
+        />
+      )}
     </div>
   );
 };

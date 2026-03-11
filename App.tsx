@@ -223,7 +223,7 @@ const App: React.FC = () => {
       <ToastSystem />
 
       {/* Window Layer */}
-      {windows.map(win => (
+      {windows.filter(win => win.desktopIndex === useOS.getState().currentDesktop).map(win => (
         <Window key={win.id} data={win}>
           {getAppContent(win.appId, win.data)}
         </Window>
