@@ -61,12 +61,14 @@ The entire Operating System — the Go microkernel, the React graphical environm
 Kernos OS relies on a local LLM to power its intelligent agents. We recommend using **[LM Studio](https://lmstudio.ai/)**.
 
 1. Download and install LM Studio.
-2. In the search bar, download a capable coding model. We recommend:
-   - `Qwen-2.5-Coder-7B-Instruct` (Fast & capable)
-   - `Llama-3.1-8B-Instruct` (Great reasoning)
-   - `Phi-3.5-mini-instruct` (For lower-end hardware)
+2. In the search bar, download the highly capable **Qwen** array and **Nomic** embeddings. Kernos is pre-configured for:
+   - LLM: `qwen/qwen3-vl-4b` (for lightweight tasks)
+   - LLM: `qwen/qwen3-4b-thinking-2507` (for deep reasoning tasks)
+   - Embedder: `text-embedding-nomic-embed-text-v1.5` (for Vector Graph memory)
 3. Navigate to the **Local Server** tab in LM Studio.
-4. Select your downloaded model and click **Start Server**. Ensure it is running on `http://localhost:1234/v1`.
+4. Ensure all models are **Loaded** and click **Start Server**. It must run on `http://localhost:1234/v1`.
+
+> **⚠️ Note on Alternative Models:** If you prefer to use different models (e.g., Llama-3, DeepSeek), you must update the `model` identifier strings inside `server/agents.yaml` to precisely match your downloaded model names.
 
 ### 2. Building & Running Kernos OS
 
