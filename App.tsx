@@ -18,6 +18,7 @@ import { Desktop } from './components/ui/Desktop';
 import { ToastSystem } from './components/ui/ToastSystem';
 import { SystemMetricsApp } from './apps/SystemMetrics';
 import { SettingsApp } from './apps/Settings';
+import { MultiAgentWorkspace } from './apps/MultiAgentWorkspace';
 
 const App: React.FC = () => {
   const { windows } = useOS();
@@ -55,6 +56,7 @@ const App: React.FC = () => {
       case 'applet': return <DynamicApplet appletId={data?.appletId} sourceCode={data?.sourceCode} />;
       case 'metrics': return <SystemMetricsApp />;
       case 'settings': return <SettingsApp />;
+      case 'multi-agents': return <MultiAgentWorkspace />;
       default: return <div className="p-4 text-red-500">App not found</div>;
     }
   };

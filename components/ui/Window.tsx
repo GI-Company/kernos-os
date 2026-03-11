@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useOS } from '../../store';
 import { WindowState, COLORS } from '../../types';
-import { X, Minus, Square, Terminal, Monitor, FileCode, HardDrive, Cpu, Workflow, Package, Bot, Brain, FolderGit2 } from 'lucide-react';
+import { X, Minus, Square, Terminal, Monitor, FileCode, HardDrive, Cpu, Workflow, Package, Bot, Brain, FolderGit2, Activity, Settings } from 'lucide-react';
 
 interface WindowProps {
   data: WindowState;
@@ -11,12 +11,17 @@ interface WindowProps {
 export const Window: React.FC<WindowProps> = ({ data, children }) => {
   const { closeWindow, focusWindow, moveWindow, resizeWindow, minimizeWindow, maximizeWindow } = useOS();
   const [isDragging, setIsDragging] = useState(false);
+  const [snapZone, setSnapZone] = useState<'left' | 'right' | 'top' | null>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const preSnapSize = useRef({ width: data.width, height: data.height, x: data.x, y: data.y });
+
+  const SNAP_THRESHOLD = 20;
 
   const handleMouseDown = (e: React.MouseEvent) => {
     focusWindow(data.id);
     if (!data.isMaximized) {
       setIsDragging(true);
+      preSnapSize.current = { width: data.width, height: data.height, x: data.x, y: data.y };
       dragOffset.current = {
         x: e.clientX - data.x,
         y: e.clientY - data.y
@@ -27,11 +32,41 @@ export const Window: React.FC<WindowProps> = ({ data, children }) => {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging) {
-        moveWindow(data.id, e.clientX - dragOffset.current.x, e.clientY - dragOffset.current.y);
+        const newX = e.clientX - dragOffset.current.x;
+        const newY = e.clientY - dragOffset.current.y;
+        moveWindow(data.id, newX, newY);
+
+        // Detect snap zones
+        const vw = window.innerWidth;
+        if (e.clientX <= SNAP_THRESHOLD) {
+          setSnapZone('left');
+        } else if (e.clientX >= vw - SNAP_THRESHOLD) {
+          setSnapZone('right');
+        } else if (e.clientY <= SNAP_THRESHOLD) {
+          setSnapZone('top');
+        } else {
+          setSnapZone(null);
+        }
       }
     };
+
     const handleMouseUp = () => {
+      if (isDragging && snapZone) {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight - 48; // subtract taskbar height
+
+        if (snapZone === 'left') {
+          moveWindow(data.id, 0, 0);
+          resizeWindow(data.id, vw / 2, vh);
+        } else if (snapZone === 'right') {
+          moveWindow(data.id, vw / 2, 0);
+          resizeWindow(data.id, vw / 2, vh);
+        } else if (snapZone === 'top') {
+          maximizeWindow(data.id);
+        }
+      }
       setIsDragging(false);
+      setSnapZone(null);
     };
 
     if (isDragging) {
@@ -42,7 +77,7 @@ export const Window: React.FC<WindowProps> = ({ data, children }) => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, data.id, moveWindow]);
+  }, [isDragging, snapZone, data.id, moveWindow, resizeWindow, maximizeWindow]);
 
   if (data.isMinimized) return null;
 
@@ -55,6 +90,9 @@ export const Window: React.FC<WindowProps> = ({ data, children }) => {
       case 'ai-chat': return <Brain size={16} className="text-pink-400" />;
       case 'agents': return <Bot size={16} className="text-blue-400" />;
       case 'semantic-vfs': return <FolderGit2 size={16} className="text-pink-400" />;
+      case 'metrics': return <Activity size={16} className="text-cyan-400" />;
+      case 'settings': return <Settings size={16} className="text-yellow-400" />;
+      case 'multi-agents': return <Bot size={16} className="text-purple-400" />;
       default: return <Terminal size={16} className="text-gray-400" />;
     }
   };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useOS } from '../../store';
-import { Terminal, Monitor, FileCode, HardDrive, Cpu, Menu, Workflow, Package, Bot, Brain, FolderGit2, Sparkles, Activity, Settings } from 'lucide-react';
+import { Terminal, Monitor, FileCode, HardDrive, Cpu, Menu, Workflow, Package, Bot, Brain, FolderGit2, Sparkles, Activity, Settings, Users } from 'lucide-react';
 import { kernel } from '../../services/kernel';
 
 const Clock = () => {
@@ -70,6 +70,9 @@ export const Taskbar: React.FC = () => {
         </button>
         <button onClick={() => openWindow('settings', 'Settings')} className="p-2 rounded hover:bg-white/10 text-gray-400 hover:text-yellow-400 transition-colors" title="Settings">
           <Settings size={18} />
+        </button>
+        <button onClick={() => openWindow('multi-agents', 'Multi-Agent Workspace')} className="p-2 rounded hover:bg-white/10 text-gray-400 hover:text-purple-400 transition-colors" title="Multi-Agent Workspace">
+          <Users size={18} />
         </button>
 
         <div className="h-6 w-px bg-white/10 mx-2" />

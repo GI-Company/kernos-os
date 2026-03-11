@@ -51,6 +51,7 @@ export const useOS = create<OSStore>((set) => ({
     if (appId === 'p2p') { width = 600; height = 450; }
     if (appId === 'metrics') { width = 450; height = 500; }
     if (appId === 'settings') { width = 450; height = 500; }
+    if (appId === 'multi-agents') { width = 700; height = 550; }
 
     const newWindow: WindowState = {
       id,
