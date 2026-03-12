@@ -635,6 +635,12 @@ func handleEnvelope(bus *Bus, env Envelope, te *TaskEngine, pe *PredictionEngine
 	if env.Topic == "pkg.install" {
 		handlePkgInstall(bus, env)
 	}
+	if env.Topic == "pkg.uninstall" {
+		handlePkgUninstall(bus, env)
+	}
+	if env.Topic == "pkg.list" {
+		handlePkgList(bus, env)
+	}
 	if env.Topic == "sys.config:get" {
 		payload, ok := env.Payload.(map[string]interface{})
 		if ok {

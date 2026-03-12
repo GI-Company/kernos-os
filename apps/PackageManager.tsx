@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { kernel } from '../services/kernel';
 import { Envelope } from '../types';
-import { Package, Download, Check, Loader, Box, Search, RefreshCw } from 'lucide-react';
+import { Package, Download, Check, Loader, Box, Search, RefreshCw, Trash2 } from 'lucide-react';
 
 interface PkgInfo {
     name: string;
@@ -11,17 +11,22 @@ interface PkgInfo {
 }
 
 const FALLBACK_PACKAGES: PkgInfo[] = [
-    { name: 'python', desc: 'Python 3.12 Interpreter', version: '3.12.0', installed: false },
-    { name: 'rustc', desc: 'Rust Compiler & Cargo', version: '1.75.0', installed: false },
-    { name: 'ffmpeg', desc: 'Media processing suite', version: '6.0.0', installed: false },
-    { name: 'sqlite', desc: 'SQL Database Engine', version: '3.42.0', installed: false },
-    { name: 'node', desc: 'Node.js Runtime', version: '20.10.0', installed: false },
+    { name: 'python', desc: 'Python 3.12 Interpreter', version: '3.12.2', installed: false },
+    { name: 'node', desc: 'Node.js Runtime', version: '20.11.1', installed: false },
+    { name: 'go', desc: 'Go Programming Language', version: '1.22.0', installed: false },
+    { name: 'rustc', desc: 'Rust Compiler & Cargo', version: '1.76.0', installed: false },
+    { name: 'deno', desc: 'Deno Runtime (TypeScript/JS)', version: '1.40.5', installed: false },
+    { name: 'ffmpeg', desc: 'Media Processing Suite', version: '6.0.0', installed: false },
+    { name: 'sqlite', desc: 'SQL Database Engine', version: '0.21.6', installed: false },
+    { name: 'ripgrep', desc: 'Ultra-fast recursive search (rg)', version: '14.1.0', installed: false },
+    { name: 'jq', desc: 'Command-line JSON Processor', version: '1.7.1', installed: false },
 ];
 
 export const PackageManagerApp: React.FC = () => {
     const [packages, setPackages] = useState<PkgInfo[]>([]);
     const [installing, setInstalling] = useState<string | null>(null);
-    const [progress, setProgress] = useState<string>('');
+    const [uninstalling, setUninstalling] = useState<string | null>(null);
+    const [progress, setProgress] = useState('');
     const [filter, setFilter] = useState('');
     const [loading, setLoading] = useState(true);
 
@@ -52,6 +57,13 @@ export const PackageManagerApp: React.FC = () => {
                 setInstalling(null);
                 setProgress('');
             }
+            if (env.topic === 'pkg.uninstall:done') {
+                const { pkgName, error } = env.payload;
+                if (!error) {
+                    setPackages(prev => prev.map(p => p.name === pkgName ? { ...p, installed: false } : p));
+                }
+                setUninstalling(null);
+            }
             if (env.topic === 'task.event' && installing && env.payload.runId?.startsWith('pkg')) {
                 const { step, status } = env.payload;
                 if (status === 'running') {
@@ -63,14 +75,22 @@ export const PackageManagerApp: React.FC = () => {
     }, [installing]);
 
     const handleInstall = (pkg: PkgInfo) => {
-        if (pkg.installed || installing) return;
+        if (pkg.installed || installing || uninstalling) return;
         setInstalling(pkg.name);
         kernel.publish('pkg.install', { _request_id: Math.random().toString(), pkgName: pkg.name });
+    };
+
+    const handleUninstall = (pkg: PkgInfo) => {
+        if (!pkg.installed || installing || uninstalling) return;
+        setUninstalling(pkg.name);
+        kernel.publish('pkg.uninstall', { pkgName: pkg.name });
     };
 
     const filtered = filter
         ? packages.filter(p => p.name.toLowerCase().includes(filter.toLowerCase()) || p.desc.toLowerCase().includes(filter.toLowerCase()))
         : packages;
+
+    const installedCount = packages.filter(p => p.installed).length;
 
     return (
         <div className="h-full bg-[#0a0a0f] text-white flex flex-col">
@@ -80,7 +100,7 @@ export const PackageManagerApp: React.FC = () => {
                     <div>
                         <h2 className="text-sm font-bold">Kernos Package Manager</h2>
                         <p className="text-[10px] text-gray-500">
-                            {loading ? 'Querying registry...' : `${packages.length} packages available`}
+                            {loading ? 'Querying registry...' : `${packages.length} packages available · ${installedCount} installed`}
                         </p>
                     </div>
                     <div className="flex-1" />
@@ -116,24 +136,39 @@ export const PackageManagerApp: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                             {installing === pkg.name ? (
                                 <div className="flex flex-col items-end">
                                     <div className="flex items-center gap-2 text-cyan-400 text-xs">
                                         <Loader size={12} className="animate-spin" />
                                         <span>Installing...</span>
                                     </div>
-                                    <span className="text-[10px] text-gray-600 font-mono mt-1">{progress}</span>
+                                    <span className="text-[10px] text-gray-600 font-mono mt-1 max-w-[180px] truncate">{progress}</span>
+                                </div>
+                            ) : uninstalling === pkg.name ? (
+                                <div className="flex items-center gap-2 text-red-400 text-xs">
+                                    <Loader size={12} className="animate-spin" />
+                                    <span>Removing...</span>
                                 </div>
                             ) : pkg.installed ? (
-                                <div className="flex items-center gap-1 text-green-500 text-xs px-3 py-1.5 bg-green-500/10 rounded-lg">
-                                    <Check size={14} />
-                                    <span>Installed</span>
+                                <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1 text-green-500 text-xs px-3 py-1.5 bg-green-500/10 rounded-lg">
+                                        <Check size={14} />
+                                        <span>Installed</span>
+                                    </div>
+                                    <button
+                                        onClick={() => handleUninstall(pkg)}
+                                        disabled={!!installing || !!uninstalling}
+                                        className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-30"
+                                        title={`Uninstall ${pkg.name}`}
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
                                 </div>
                             ) : (
                                 <button 
                                     onClick={() => handleInstall(pkg)}
-                                    disabled={!!installing}
+                                    disabled={!!installing || !!uninstalling}
                                     className="flex items-center gap-1.5 text-xs bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg transition-colors"
                                 >
                                     <Download size={14} />
@@ -151,7 +186,7 @@ export const PackageManagerApp: React.FC = () => {
             </div>
 
             <div className="h-6 bg-black/40 text-[10px] text-gray-600 flex items-center px-4 border-t border-white/5">
-                {installing ? `Processing transaction for ${installing}...` : `${filtered.length} packages shown`}
+                {installing ? `Installing ${installing}...` : uninstalling ? `Removing ${uninstalling}...` : `${filtered.length} packages shown · ${installedCount} installed`}
             </div>
         </div>
     );
