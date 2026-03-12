@@ -8,16 +8,53 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gorilla/websocket"
 	"gopkg.in/yaml.v3"
 )
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Feature 4: Conversation History — maintains a sliding context window per user
+// ───────────────────────────────────────────────────────────────────────────────
+
+type chatTurn struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+var (
+	conversationHistories = make(map[string][]chatTurn) // key: agentID + ":" + userID
+	convHistMutex         sync.RWMutex
+	maxConvTurns          = 10 // sliding window: last N exchanges
+)
+
+func appendConvTurn(agentID, userID, role, content string) {
+	key := agentID + ":" + userID
+	convHistMutex.Lock()
+	defer convHistMutex.Unlock()
+	conversationHistories[key] = append(conversationHistories[key], chatTurn{Role: role, Content: content})
+	// Trim to sliding window
+	if len(conversationHistories[key]) > maxConvTurns*2 {
+		conversationHistories[key] = conversationHistories[key][len(conversationHistories[key])-maxConvTurns*2:]
+	}
+}
+
+func getConvHistory(agentID, userID string) []chatTurn {
+	key := agentID + ":" + userID
+	convHistMutex.RLock()
+	defer convHistMutex.RUnlock()
+	history := make([]chatTurn, len(conversationHistories[key]))
+	copy(history, conversationHistories[key])
+	return history
+}
 
 // EmbeddedAgent is an agent proxy that runs as a goroutine inside the kernel.
 // It connects to the kernel's own WebSocket, registers, and handles messages.
@@ -205,6 +242,9 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 			log.Printf("[%s] Chat from %s: %.60s...", agent.ID, env.From, prompt)
 
 			go func(from string, msg string, imgB64 string) {
+				// ── Feature 4: Record user message in conversation history ──
+				appendConvTurn(agent.ID, from, "user", msg)
+
 				// ++ SOTA RAG INJECTION (PHASE 14) ++
 				ragContext := ""
 				if agent.ID == "agent-dispatcher" && GlobalVectorDB != nil {
@@ -243,6 +283,19 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 				// Inject RAG into System Prompt dynamically
 				finalSystemPrompt := agent.SystemPrompt + ragContext
 
+				// ── Feature 4: Build messages with conversation history ──
+				var messages []map[string]interface{}
+				messages = append(messages, map[string]interface{}{"role": "system", "content": finalSystemPrompt})
+
+				// Inject prior conversation turns (sliding window)
+				history := getConvHistory(agent.ID, from)
+				// Skip the last entry since it's the current message we just appended
+				if len(history) > 1 {
+					for _, turn := range history[:len(history)-1] {
+						messages = append(messages, map[string]interface{}{"role": turn.Role, "content": turn.Content})
+					}
+				}
+
 				// Build the user message — either plain text or multimodal (text + image)
 				var userContent interface{}
 				if imgB64 != "" {
@@ -254,15 +307,13 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 				} else {
 					userContent = msg
 				}
+				messages = append(messages, map[string]interface{}{"role": "user", "content": userContent})
 
-				// Build the request manually to support multimodal content
+				// Build the request with full conversation context
 				reqBody := map[string]interface{}{
-					"model":  agent.Model,
-					"stream": true,
-					"messages": []map[string]interface{}{
-						{"role": "system", "content": finalSystemPrompt},
-						{"role": "user", "content": userContent},
-					},
+					"model":    agent.Model,
+					"stream":   true,
+					"messages": messages,
 				}
 
 				jsonData, err := json.Marshal(reqBody)
@@ -324,17 +375,162 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 					response = "No response from model"
 				}
 
+				// ── Feature 4: Record assistant reply in history ──
+				cleanReply := stripThinkTags(response)
+				appendConvTurn(agent.ID, from, "assistant", cleanReply)
+
+				// ── Feature 5: Confidence Scoring ──
+				confidence := assessConfidence(cleanReply)
+				log.Printf("[%s] Confidence: %.2f for response to %s", agent.ID, confidence, from)
+
 				reply := agentEnvelope{
 					Topic: "agent.chat:reply",
 					From:  agent.ID,
 					To:    from,
 					Time:  time.Now().Format(time.RFC3339),
-					Payload: map[string]string{
-						"reply": response,
+					Payload: map[string]interface{}{
+						"reply":      response,
+						"confidence": fmt.Sprintf("%.2f", confidence),
 					},
 				}
 				_ = conn.WriteJSON(reply)
+
+				// ── Feature 5: Low confidence → auto-delegate to Architect for second opinion ──
+				if confidence < 0.5 && agent.ID != "agent-architect" {
+					log.Printf("[%s] ⚠️ Low confidence (%.2f). Delegating to Architect for second opinion...", agent.ID, confidence)
+					internalReq := agentEnvelope{
+						Topic: "agent.internal",
+						From:  agent.ID,
+						To:    "agent-architect",
+						Time:  time.Now().Format(time.RFC3339),
+						Payload: map[string]string{
+							"type":         "second-opinion",
+							"originalUser": from,
+							"question":     msg,
+							"firstAnswer":  cleanReply,
+						},
+					}
+					_ = conn.WriteJSON(internalReq)
+				}
 			}(env.From, prompt, imageB64)
+		}
+
+		// ── Feature 1: Agent-to-Agent Communication ──
+		// Handle internal agent delegation requests
+		if env.Topic == "agent.internal" && env.To == agent.ID {
+			payloadMap, ok := env.Payload.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			reqType, _ := payloadMap["type"].(string)
+			log.Printf("[%s] 🔗 Agent-to-Agent request from %s: type=%s", agent.ID, env.From, reqType)
+
+			go func(fromAgent string, payload map[string]interface{}) {
+				switch reqType {
+				case "second-opinion":
+					// Feature 5: Architect provides a second opinion on low-confidence responses
+					originalUser, _ := payload["originalUser"].(string)
+					question, _ := payload["question"].(string)
+					firstAnswer, _ := payload["firstAnswer"].(string)
+
+					prompt := fmt.Sprintf(`Another agent responded to a user's question but has low confidence. Review and provide a refined answer.
+
+User Question: %s
+
+First Answer (low confidence): %s
+
+Provide a more thorough, accurate response. If the first answer is correct, confirm it with additional detail.`, question, firstAnswer)
+
+					resp, err := queryLM(agent.LMStudioURL, agent.Model, agent.SystemPrompt, prompt, nil)
+					if err != nil {
+						log.Printf("[%s] Second opinion failed: %v", agent.ID, err)
+						return
+					}
+
+					clean := stripThinkTags(resp)
+					_ = conn.WriteJSON(agentEnvelope{
+						Topic: "agent.chat:reply",
+						From:  agent.ID,
+						To:    originalUser,
+						Time:  time.Now().Format(time.RFC3339),
+						Payload: map[string]interface{}{
+							"reply":      "🧠 **Architect Second Opinion:**\n\n" + clean,
+							"confidence": "0.90",
+							"source":     "second-opinion",
+						},
+					})
+
+				case "delegate":
+					// Generic delegation: one agent asks another to handle a task
+					msg, _ := payload["msg"].(string)
+					origUser, _ := payload["originalUser"].(string)
+
+					resp, err := queryLM(agent.LMStudioURL, agent.Model, agent.SystemPrompt, msg, nil)
+					if err != nil {
+						log.Printf("[%s] Delegation failed: %v", agent.ID, err)
+						return
+					}
+
+					clean := stripThinkTags(resp)
+					_ = conn.WriteJSON(agentEnvelope{
+						Topic: "agent.chat:reply",
+						From:  agent.ID,
+						To:    origUser,
+						Time:  time.Now().Format(time.RFC3339),
+						Payload: map[string]interface{}{
+							"reply":  "🔗 **" + agent.DisplayName + " (delegated):**\n\n" + clean,
+							"source": "delegation",
+						},
+					})
+				}
+			}(env.From, payloadMap)
+		}
+
+		// ── Feature 2: Proactive Agent Initiative ──
+		// Dispatcher watches terminal output for errors and proactively suggests fixes
+		if env.Topic == "vm.output" && agent.ID == "agent-dispatcher" {
+			payloadMap, ok := env.Payload.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			output, _ := payloadMap["output"].(string)
+			command, _ := payloadMap["command"].(string)
+
+			// Only trigger on error-like outputs
+			if containsErrorSignal(output) {
+				go func(cmd, out string) {
+					log.Printf("[Proactive] 🔍 Error detected in terminal output. Generating proactive suggestion...")
+
+					proactivePrompt := fmt.Sprintf(`The user just ran a command in the terminal and it produced an error. 
+Analyze the error and provide a SHORT, actionable suggestion to fix it. 
+Be concise — max 2-3 sentences. If you can provide the exact fix command, do so.
+
+Command: %s
+Output:
+%s`, cmd, truncateString(out, 500))
+
+					resp, err := queryLM(agent.LMStudioURL, agent.Model, agent.SystemPrompt, proactivePrompt, nil)
+					if err != nil {
+						return
+					}
+
+					clean := stripThinkTags(resp)
+					if len(clean) > 0 {
+						_ = conn.WriteJSON(agentEnvelope{
+							Topic: "agent.proactive",
+							From:  agent.ID,
+							Time:  time.Now().Format(time.RFC3339),
+							Payload: map[string]string{
+								"suggestion": clean,
+								"command":    cmd,
+								"type":       "error-fix",
+							},
+						})
+						log.Printf("[Proactive] 💡 Suggestion sent: %.60s...", clean)
+					}
+				}(command, output)
+			}
 		}
 
 		// Handle ping
@@ -456,3 +652,76 @@ func queryLM(apiURL, model, systemPrompt, userMsg string, onToken func(string)) 
 
 	return "No response from model", nil
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Feature 5: Confidence Scoring — heuristic self-assessment of response quality
+// ───────────────────────────────────────────────────────────────────────────────
+
+func assessConfidence(response string) float64 {
+	if response == "" || response == "No response from model" {
+		return 0.0
+	}
+
+	confidence := 0.8 // Base confidence
+
+	// Hedging language lowers confidence
+	hedges := []string{"I'm not sure", "I think", "maybe", "possibly", "it might", "I believe",
+		"perhaps", "not certain", "could be", "I don't know", "unsure", "unclear"}
+	for _, h := range hedges {
+		if strings.Contains(strings.ToLower(response), h) {
+			confidence -= 0.1
+		}
+	}
+
+	// Very short responses are suspect
+	if len(response) < 20 {
+		confidence -= 0.2
+	}
+
+	// Contradictions within the response
+	if strings.Contains(response, "however") && strings.Contains(response, "but") {
+		confidence -= 0.05
+	}
+
+	// Long, detailed responses boost confidence
+	if len(response) > 300 {
+		confidence += 0.05
+	}
+
+	// Code blocks suggest concrete, actionable answers
+	if strings.Contains(response, "```") {
+		confidence += 0.05
+	}
+
+	// Clamp to [0, 1]
+	return math.Max(0, math.Min(1.0, confidence))
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Feature 2: Proactive Initiative — error signal detection in terminal output
+// ───────────────────────────────────────────────────────────────────────────────
+
+func containsErrorSignal(output string) bool {
+	lower := strings.ToLower(output)
+	errorSignals := []string{
+		"error:", "fatal:", "panic:", "exception:", "traceback",
+		"command not found", "no such file", "permission denied",
+		"failed to", "cannot find", "segmentation fault",
+		"build failed", "compilation error", "syntax error",
+		"npm err!", "enoent", "module not found",
+	}
+	for _, sig := range errorSignals {
+		if strings.Contains(lower, sig) {
+			return true
+		}
+	}
+	return false
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "\n[...truncated...]"
+}
+

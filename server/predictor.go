@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -81,13 +82,32 @@ func (pe *PredictionEngine) PredictNextCommand(filename, codeSnippet string) str
 		pe.cacheMutex.Unlock()
 	}
 
+	// ── Feature 3: Memory-Informed Predictions ──
+	// Query the Vector DB for past commands and context related to this file
+	memoryContext := ""
+	if GlobalVectorDB != nil {
+		query := "search_query: terminal commands for " + filename
+		vectors, err := GlobalVectorDB.GenerateEmbeddings([]string{query})
+		if err == nil && len(vectors) > 0 {
+			results := GlobalVectorDB.Search(vectors[0], 2)
+			if len(results) > 0 {
+				memoryContext = "\n\nHistorical Context (from semantic memory):\n"
+				for _, res := range results {
+					memoryContext += fmt.Sprintf("- %s (similarity: %.2f)\n", res.Chunk.Text, res.Similarity)
+				}
+				log.Printf("[Predictor] Injected %d memory vectors into prediction context", len(results))
+			}
+		}
+	}
+
 	systemPrompt := `You are the Kernos Prediction Engine. The user is actively typing code.
-Based on the file name and the code snippet, predict exactly ONE terminal command they are likely to run next to test or verify this code.
+Based on the file name, the code snippet, and any historical context from semantic memory,
+predict exactly ONE terminal command they are likely to run next to test or verify this code.
 Only predict safe, read-only, or test commands like: 'go test', 'go build', 'npm test', 'npm run lint'.
 Output ONLY the raw command string, nothing else. No markdown, no explanations.
 If you cannot confidently predict a logical command, output exactly "NONE".`
 
-	userMsg := "Filename: " + filename + "\n\nCode Snippet:\n" + codeSnippet
+	userMsg := "Filename: " + filename + "\n\nCode Snippet:\n" + codeSnippet + memoryContext
 
 	// Query the local model (reuse queryLM from embedded_agents.go)
 	response, err := queryLM(pe.lmURL, pe.dispatcher.Model, systemPrompt, userMsg, nil)
