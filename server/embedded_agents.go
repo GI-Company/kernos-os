@@ -162,6 +162,39 @@ func StartEmbeddedAgents(lmStudioURL string, authToken string) {
 }
 
 func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
+	retryCount := 0
+	maxRetries := 30
+
+	for retryCount < maxRetries {
+		select {
+		case <-ctx.Done():
+			log.Printf("[%s] Agent shutdown signal received.", agent.ID)
+			return
+		default:
+		}
+
+		if retryCount > 0 {
+			backoff := time.Duration(retryCount) * 2 * time.Second
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+			log.Printf("[%s] Reconnecting (attempt %d/%d, backoff %s)...", agent.ID, retryCount+1, maxRetries, backoff)
+			time.Sleep(backoff)
+		}
+
+		err := runAgentSession(ctx, agent, authToken)
+		if err == nil {
+			return // Clean shutdown via context cancellation
+		}
+
+		retryCount++
+		log.Printf("[%s] Session ended: %v", agent.ID, err)
+	}
+
+	log.Printf("[%s] ❌ Max retries (%d) reached. Agent permanently stopped.", agent.ID, maxRetries)
+}
+
+func runAgentSession(ctx context.Context, agent EmbeddedAgent, authToken string) error {
 	u := url.URL{Scheme: "ws", Host: agent.KernelWSAddr, Path: "/ws"}
 
 	// Retry connection with backoff
@@ -177,7 +210,7 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 	}
 	if err != nil {
 		log.Printf("[%s] Failed to connect after retries: %v", agent.ID, err)
-		return
+		return err
 	}
 	defer conn.Close()
 
@@ -212,7 +245,7 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("[%s] Disconnected: %v", agent.ID, err)
-			return
+			return err
 		}
 
 		var env agentEnvelope
@@ -235,7 +268,7 @@ func runAgent(ctx context.Context, agent EmbeddedAgent, authToken string) {
 			// Check for context cancellation
 			select {
 			case <-ctx.Done():
-				return
+				return nil
 			default:
 			}
 

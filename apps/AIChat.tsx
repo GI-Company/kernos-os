@@ -18,6 +18,15 @@ interface AgentInfo {
     role: string;
 }
 
+// Strip Qwen's <think>...</think> reasoning blocks from responses
+function stripThink(text: string): string {
+    // Remove complete <think>...</think> blocks
+    let result = text.replace(/<think>[\s\S]*?<\/think>/g, '');
+    // Remove unclosed <think> at the end (mid-stream)
+    result = result.replace(/<think>[\s\S]*$/g, '');
+    return result.trim();
+}
+
 export const AIChatApp: React.FC = () => {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
@@ -93,30 +102,37 @@ export const AIChatApp: React.FC = () => {
             }
 
             // Receive chat replies (agent-targeted mode)
+            // When streaming is active, the reply signals completion — commit the stream buffer
             if (env.topic === 'agent.chat:reply') {
                 const payload = env.payload as any;
-                const reply = payload?.reply || '(no response)';
-                setStreamBuffer('');
-                setMessages(prev => [...prev, {
-                    id: Math.random().toString(36),
-                    role: 'agent',
-                    content: reply,
-                    agentId: env.from,
-                    time: new Date().toLocaleTimeString()
-                }]);
+                const reply = stripThink(payload?.reply || '(no response)');
+                setStreamBuffer(prev => {
+                    const content = prev ? stripThink(prev) : reply;
+                    if (content) {
+                        setMessages(msgs => [...msgs, {
+                            id: Math.random().toString(36),
+                            role: 'agent',
+                            content,
+                            agentId: env.from,
+                            time: new Date().toLocaleTimeString()
+                        }]);
+                    }
+                    return '';
+                });
                 setIsWaiting(false);
             }
 
-            // Agent streaming
+            // Agent streaming — accumulate chunks, strip think tags
             if (env.topic === 'agent.chat:stream') {
                 const payload = env.payload as any;
-                setStreamBuffer(prev => prev + (payload.chunk || ''));
+                const chunk = payload.chunk || '';
+                setStreamBuffer(prev => stripThink(prev + chunk));
                 setIsWaiting(false);
             }
 
             // Streaming responses (direct LM mode)
             if (env.topic === 'ai.stream') {
-                setStreamBuffer(prev => prev + (env.payload.chunk || ''));
+                setStreamBuffer(prev => stripThink(prev + (env.payload.chunk || '')));
                 setIsWaiting(false);
             }
 

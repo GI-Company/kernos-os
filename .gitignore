@@ -30,3 +30,4 @@ server/server
 aether
 kernos
 server/server_bin
+server/kernos_server

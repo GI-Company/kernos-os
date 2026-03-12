@@ -217,8 +217,8 @@ const App: React.FC = () => {
         <Desktop />
         {/* Logo / Watermark */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none opacity-30">
-          <h1 className="text-9xl font-black text-white/5 tracking-tighter">KERNOS</h1>
-          <p className="text-white/10 font-mono mt-4 tracking-[1em]">BROWSER NATIVE OS</p>
+          <h1 className="text-9xl font-black text-white/15 tracking-tighter">KERNOS</h1>
+          <p className="text-white/25 font-mono mt-4 tracking-[1em]">BROWSER NATIVE OS</p>
         </div>
       </div>
 

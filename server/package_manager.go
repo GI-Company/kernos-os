@@ -75,7 +75,7 @@ func isPackageInstalled(name string) bool {
 
 // --- List Handler (with installed state) ---
 
-func handlePkgList(bus *Bus, env Envelope) {
+func handlePkgList(bus *Bus, _ Envelope) {
 	type pkgWithState struct {
 		Name      string `json:"name"`
 		Desc      string `json:"desc"`
@@ -270,7 +270,7 @@ func handlePkgUninstall(bus *Bus, env Envelope) {
 
 // --- HTTP API for listing installed packages ---
 
-func handlePkgListHTTP(w http.ResponseWriter, r *http.Request) {
+func handlePkgListHTTP(w http.ResponseWriter, _ *http.Request) {
 	type pkgWithState struct {
 		Name      string `json:"name"`
 		Desc      string `json:"desc"`
