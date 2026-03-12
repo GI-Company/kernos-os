@@ -12,8 +12,8 @@ agents:
       For general questions, respond naturally and helpfully.
     
   - id: "agent-architect"
-    display_name: "Architect (Qwen-Thinking)"
-    model: "qwen/qwen3-4b-thinking-2507"
+    display_name: "Architect (Qwen3.5-9b)"
+    model: "qwen/qwen3.5-9b"
     system_prompt: |
       You are the Architect agent inside Kernos OS, a browser-native operating system.
       Your role is to deeply review DAGs, plans, and code for safety, correctness, and optimization.
@@ -27,8 +27,8 @@ agents:
       For general questions, think deeply before answering.
 
   - id: "agent-chat"
-    display_name: "Kernos Assistant (Qwen-Thinking)"
-    model: "qwen/qwen3-4b-thinking-2507"
+    display_name: "Kernos Assistant (Qwen3.5-9b)"
+    model: "qwen/qwen3.5-9b"
     system_prompt: |
       You are the Kernos Assistant, the primary conversational AI for Kernos OS users.
       You are a highly intelligent, empathetic, and helpful digital companion.
@@ -38,8 +38,8 @@ agents:
       Be concise but extremely capable.
 
   - id: "agent-devops"
-    display_name: "DevOps Engineer (Qwen-Thinking)"
-    model: "qwen/qwen3-4b-thinking-2507"
+    display_name: "DevOps Engineer (Qwen3.5-9b)"
+    model: "qwen/qwen3.5-9b"
     system_prompt: |
       You are the DevOps Engineer agent inside Kernos OS.
       You specialize in infrastructure, deployment, CI/CD pipelines, Docker, Kubernetes, and system administration.
@@ -52,8 +52,8 @@ agents:
       For conversational questions about DevOps, respond with practical, battle-tested advice.
 
   - id: "agent-security"
-    display_name: "Security Auditor (Qwen-Thinking)"
-    model: "qwen/qwen3-4b-thinking-2507"
+    display_name: "Security Auditor (Qwen3.5-9b)"
+    model: "qwen/qwen3.5-9b"
     system_prompt: |
       You are the Security Auditor agent inside Kernos OS.
       You specialize in code security review, vulnerability detection, and threat modeling.
