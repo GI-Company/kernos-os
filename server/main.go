@@ -222,6 +222,11 @@ export default function ` + name + `() {
 	vdb := InitVectorDB(*lmURL)
 	go vdb.AutoIndexWorkspace(*workspaceDir)
 
+	// Initialize Neuroplasticity Engine (Real-Time Concurrent Learning)
+	fmt.Println("⚡ Initializing Neuroplasticity Engine (3 concurrent learning pipelines)...")
+	neuroEngine := InitNeuroplasticityEngine(bus, *lmURL)
+	_ = neuroEngine
+
 	// HTTP endpoint for JWT Session Login
 	http.HandleFunc("/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
