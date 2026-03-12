@@ -39,9 +39,18 @@ export const AIChatApp: React.FC = () => {
 
     // After 3 seconds, if no agents connected, switch to direct LM mode
     useEffect(() => {
+        // Request the agent roster from the kernel immediately
+        kernel.publish('agent.roster', {});
+
         agentCheckTimer.current = setTimeout(() => {
             if (agents.length === 0) {
-                setDirectMode(true);
+                // Retry once more before falling back
+                kernel.publish('agent.roster', {});
+                setTimeout(() => {
+                    if (agents.length === 0) {
+                        setDirectMode(true);
+                    }
+                }, 3000);
             }
         }, 3000);
         return () => { if (agentCheckTimer.current) clearTimeout(agentCheckTimer.current); };
@@ -49,17 +58,37 @@ export const AIChatApp: React.FC = () => {
 
     useEffect(() => {
         const unsub = kernel.subscribe((env: Envelope) => {
-            // Track agent list
+            // Track agent list from live connections
             if (env.topic === 'sys.client_list') {
                 const payload = env.payload as any;
                 const clients = (payload?.clients || []) as AgentInfo[];
                 const agentClients = clients.filter((c: AgentInfo) => c.role === 'agent');
-                setAgents(agentClients);
                 if (agentClients.length > 0) {
+                    setAgents(agentClients);
                     setDirectMode(false);
                     if (!selectedAgent) {
                         setSelectedAgent(agentClients[0].id);
                     }
+                }
+            }
+
+            // Track agent list from kernel roster (YAML-defined agents)
+            if (env.topic === 'agent.roster:resp') {
+                const rosterAgents = (env.payload?.agents || []) as AgentInfo[];
+                if (rosterAgents.length > 0) {
+                    setAgents(prev => {
+                        // Merge: prefer live connections, but fill from roster
+                        const liveIds = new Set(prev.filter(a => a.role === 'agent').map(a => a.id));
+                        const merged = [...prev];
+                        for (const ra of rosterAgents) {
+                            if (!liveIds.has(ra.id)) {
+                                merged.push(ra);
+                            }
+                        }
+                        return merged.length > prev.length ? merged : prev;
+                    });
+                    setDirectMode(false);
+                    setSelectedAgent(prev => prev || rosterAgents[0].id);
                 }
             }
 
@@ -203,7 +232,7 @@ export const AIChatApp: React.FC = () => {
                     </div>
                 ) : (
                     <button
-                        onClick={() => setDirectMode(false)}
+                        onClick={() => { setDirectMode(false); kernel.publish('agent.roster', {}); }}
                         className="text-[10px] px-2 py-1 rounded bg-white/5 text-gray-500 hover:text-white transition-colors"
                     >
                         Switch to Agent Mode

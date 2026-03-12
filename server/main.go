@@ -641,6 +641,26 @@ func handleEnvelope(bus *Bus, env Envelope, te *TaskEngine, pe *PredictionEngine
 	if env.Topic == "pkg.list" {
 		handlePkgList(bus, env)
 	}
+	if env.Topic == "agent.roster" {
+		agents := DefaultAgents("")
+		var roster []map[string]string
+		for _, a := range agents {
+			roster = append(roster, map[string]string{
+				"id":    a.ID,
+				"name":  a.DisplayName,
+				"model": a.Model,
+				"role":  "agent",
+			})
+		}
+		bus.Publish(Envelope{
+			Topic: "agent.roster:resp",
+			From:  "kernel",
+			Time:  time.Now().Format(time.RFC3339),
+			Payload: map[string]interface{}{
+				"agents": roster,
+			},
+		})
+	}
 	if env.Topic == "sys.config:get" {
 		payload, ok := env.Payload.(map[string]interface{})
 		if ok {
