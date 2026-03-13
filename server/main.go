@@ -132,7 +132,7 @@ func writePump(conn *websocket.Conn, send chan Envelope) {
 
 func main() {
 	// CLI flags
-	lmURL = flag.String("lm", "http://192.168.1.82:1234/v1/chat/completions", "LM Studio API URL")
+	lmURL = flag.String("lm", "http://127.0.0.1:1234/v1/chat/completions", "LM Studio API URL")
 	noBrowser := flag.Bool("no-browser", false, "Don't auto-open the browser")
 	noAgents := flag.Bool("no-agents", false, "Don't start embedded AI agents")
 	workspaceDir := flag.String("workspace", ".", "Directory to auto-index for Semantic VFS")
@@ -810,7 +810,9 @@ func handleVFSRead(bus *Bus, env Envelope) {
 
 	content, err := os.ReadFile(id)
 	if err != nil {
-		log.Printf("[VFS] Read Error (%s): %v", id, err)
+		if !os.IsNotExist(err) {
+			log.Printf("[VFS] Read Error (%s): %v", id, err)
+		}
 	}
 
 	bus.Publish(Envelope{
@@ -939,7 +941,7 @@ func handleVMSpawn(bus *Bus, env Envelope) {
 		Payload: map[string]string{"_request_id": reqID, "instanceId": "live-inst-1"},
 	})
 
-	output, err := ExecuteSafeCommand(reqID, cmdStr, args)
+	output, err := ExecuteSafeCommand(reqID, cmdStr, args, nil)
 
 	if err != nil {
 		// Build error message. If allowed/validation error, output is empty but err has text.
@@ -1049,7 +1051,7 @@ var (
 	procLock        sync.Mutex
 )
 
-func ExecuteSafeCommand(reqID string, cmdStr string, args []string) (string, error) {
+func ExecuteSafeCommand(reqID string, cmdStr string, args []string, extraEnv map[string]string) (string, error) {
 	// SECURITY CHECK 1: Is the command allowed?
 	if !ALLOWED_COMMANDS[cmdStr] {
 		return "", fmt.Errorf("PERMISSION DENIED: Command '%s' is not in the kernel allowlist.", cmdStr)
@@ -1113,6 +1115,11 @@ func ExecuteSafeCommand(reqID string, cmdStr string, args []string) (string, err
 		"HOME=" + jailDir,
 		"TMPDIR=" + jailDir,
 		"LANG=en_US.UTF-8",
+	}
+
+	// Inject Shared Memory Context variables from DAG
+	for k, v := range extraEnv {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
 	procLock.Lock()

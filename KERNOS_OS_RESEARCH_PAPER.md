@@ -23,9 +23,10 @@ Kernos operates purely via a high-performance publish-subscribe WebSocket bus. T
 
 The fundamental atomic unit of Kernos is the `Envelope`. Every action—opening a file, executing a shell command, broadcasting a system alert—is transmitted as a JSON envelope over the WebSocket bus. By enforcing this strict message-passing schema, Kernos implements Capability-Based Security, whereby agents and UI elements can only affect the system state if their origin hash is authorized for the explicit topic.
 
-### 2.2 Speculative RAG (Retrieval-Augmented Generation)
+### 2.2 GraphRAG and Speculative Execution
 
-To mitigate the latency inherent to LLM generation, Kernos introduces **Speculative execution within a Shadow Sandbox**. 
+To mitigate the latency inherent to LLM generation and solve the "lost in the middle" context window problem, Kernos introduces **GraphRAG combined with Speculative execution within a Shadow Sandbox**. 
+Rather than simple semantic similarity, Kernos runs a background Daemon (Qwen3.5-9B) to continuously extract entities and relationships from Nomic-vectorized filesystem chunks, populating a structured SQLite Knowledge Graph. 
 As a user types in the terminal, the kernel evaluates partial input alongside the current semantic context. A background Prediction Engine queries a local LLM to predict the user’s intended command. If a highly probable command is synthesized, Kernos silently spawns a 10-second isolated `tmp` jail (the Shadow Sandbox) and pre-executes the binary. 
 If the user submits the anticipated command, the OS yields the pre-computed `stdout` instantaneously, achieving perceived zero-latency execution.
 

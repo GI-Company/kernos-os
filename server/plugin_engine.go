@@ -233,7 +233,6 @@ func handlePluginRun(bus *Bus, env Envelope) {
 			finalArgs := append(plugin.Args, runtimeArgs...)
 			log.Printf("[PluginEngine] Executing YAML plugin '%s' (%s)", plugin.Name, plugin.Cmd)
 			
-			// Plugins invoke processes outside the usual whitelist bounds using exec.Command natively
 			// to avoid ExecuteSafeCommand limitations since plugins are statically defined in YAML by host
 			cmd := exec.Command(plugin.Cmd, finalArgs...)
 			outBytes, err := cmd.CombinedOutput()

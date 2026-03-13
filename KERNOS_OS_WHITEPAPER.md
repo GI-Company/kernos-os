@@ -21,13 +21,13 @@ Traditional operating systems use hierarchical folder structures (e.g., `/usr/bi
 Kernos OS replaces the File Allocation Table with a **Synaptic Vector Graph**. Every file, command output, and system configuration is continuously ingested into a 768-dimensional latent space using embedded Nomic text embeddings. 
 **The Result:** The OS experiences "Digital Memory." The user does not ask "where is file X?" The OS already knows, because the mathematical resonance between the user's current task and the historical file brings the memory to the forefront of the cognitive context window before the user explicitly requests it.
 
-### II. Speculative RAG (Zero-Latency Anticipation)
-Rather than waiting for user input, the Dispatcher Agent continuously evaluates the user's partial keystrokes and context. The Prediction Engine synthesizes the most probable next command and forwards it to the `ShadowEngine`. 
-This subsystem executes the speculated command in an isolated, hidden Go sandbox (a 10-second `tmp` jail). If the user ultimately hits 'Enter' on the correctly predicted command, the kernel returns the pre-computed `stdout` instantly, achieving perceived zero-latency execution via "Speculative RAG."
+### II. GraphRAG & Speculative Execution (Zero-Latency Anticipation)
+In addition to traditional vector search, Kernos OS utilizes **GraphRAG**. A background Qwen3.5-9B daemon continuously reads Nomic-vectorized text chunks and extracts structural entities and relationships into a SQLite Knowledge Graph. This provides the Architect Agent with omniscient network topology awareness of the entire codebase, eliminating "lost in the middle" context collapse.
+Simultaneously, rather than waiting for user input, the Dispatcher Agent evaluates partial keystrokes and context to synthesize probable next commands, executing them in an isolated 10-second `tmp` jail. If the user hits 'Enter' on the predicted command, the kernel returns the pre-computed `stdout` instantly via "Speculative Execution".
 
-### III. Concurrent DAG Mutation (Parallel Self-Healing)
-Sequential bash scripts are inherently brittle. Kernos approaches multi-step operations using Directed Acyclic Graphs (DAGs) orchestrated by an autonomous Task Engine.
-If an intermediate node fails (e.g., a missing dependency), the Task Engine pauses execution. It prompts the Architect Agent to synthesize multiple, divergent recovery paths. The engine then executes these alternative bash scripts concurrently in separate goroutines. The first branch to exit successfully collapses the state (a parallel race-condition), dynamically grafting the winning node into the DAG and allowing execution to proceed autonomously.
+### III. Shared Memory Contexts & Concurrent DAG Mutation
+Sequential bash scripts are inherently brittle. Kernos approaches multi-step operations using Directed Acyclic Graphs (DAGs) orchestrated by an autonomous Task Engine. To ensure true pipeline cohesion, the OS implements **Shared Memory Contexts**, where node `stdout` is securely injected into downstream sandbox execution environments via `$CTX_<nodeID>_OUT` environment variables.
+If an intermediate node fails, the Task Engine prompts the Architect to synthesize divergent recovery paths. The engine executes these branches concurrently in separate goroutines. The first branch to exit successfully collapses the state (a parallel race-condition), dynamically grafting the winning node into the DAG.
 
 ### IV. Contrastive RLHF (Scalar Reward Memory)
 To ensure the system improves over time, Kernos utilizes a nightly consolidation routine. Every executed DAG is logged into a local SQLite database with a scalar reward (+1.0 for success, -1.0 for failure/timeout). 

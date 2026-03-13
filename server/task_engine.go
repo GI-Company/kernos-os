@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 )
@@ -38,7 +39,8 @@ type EventBus interface {
 
 // TaskEngine orchestrates the execution of TaskGraphs
 type TaskEngine struct {
-	bus EventBus
+	bus         EventBus
+	TestingMode bool
 }
 
 // NewTaskEngine creates a new engine instance
@@ -85,33 +87,41 @@ func (te *TaskEngine) ValidateAndExecute(graphID string, nodeMap map[string]*Tas
 		}
 	}
 
-	prompt := "Please review the following Task DAG for execution safety and topological cycles:\n\n" + graphDesc
+	// Phase 14: GraphRAG Context Injection
+	var graphContext string
+	if GlobalVectorDB != nil {
+		graphContext = GlobalVectorDB.CompileGraphContext(graphDesc, 2)
+	}
 
-	resp, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, prompt, nil)
-	if err != nil || !strings.Contains(resp, "APPROVED") {
-		reason := "Architect rejected building the DAG. Unsafe or ill-formed."
-		if err != nil {
-			reason = err.Error()
-		} else {
-			// Extract the failure reason (ignoring the <think> blocks if present)
-			reason = resp
+	prompt := fmt.Sprintf("Please review the following Task DAG for execution safety and topological cycles:\n\n%s\n\n%s", graphDesc, graphContext)
+
+	if !te.TestingMode {
+		resp, err := queryLM(architect.LMStudioURL, architect.Model, architect.SystemPrompt, prompt, nil)
+		if err != nil || !strings.Contains(resp, "APPROVED") {
+			reason := "Architect rejected building the DAG. Unsafe or ill-formed."
+			if err != nil {
+				reason = err.Error()
+			} else {
+				// Extract the failure reason (ignoring the <think> blocks if present)
+				reason = resp
+			}
+
+			te.bus.Publish(Envelope{
+				Topic: "task.status",
+				Payload: map[string]interface{}{
+					"id":     graphID,
+					"node":   "sys",
+					"status": "validation failed",
+					"reason": reason,
+				},
+			})
+
+			// Log Telemetry (RLHF prep)
+			if GlobalTelemetry != nil {
+				go GlobalTelemetry.LogDagExecution(graphID, prompt, "ERROR", reason, -2.0)
+			}
+			return
 		}
-
-		te.bus.Publish(Envelope{
-			Topic: "task.status",
-			Payload: map[string]interface{}{
-				"id":     graphID,
-				"node":   "sys",
-				"status": "validation failed",
-				"reason": reason,
-			},
-		})
-
-		// Log Telemetry (RLHF prep)
-		if GlobalTelemetry != nil {
-			go GlobalTelemetry.LogDagExecution(graphID, prompt, "ERROR", reason, -2.0)
-		}
-		return
 	}
 
 	// 4. Execution Loop
@@ -128,6 +138,7 @@ func (te *TaskEngine) ValidateAndExecute(graphID string, nodeMap map[string]*Tas
 
 		completedCount := 0
 		totalCount := len(originalList)
+		ctxEnv := make(map[string]string)
 
 		for completedCount < totalCount {
 			progressMade := false
@@ -151,7 +162,7 @@ func (te *TaskEngine) ValidateAndExecute(graphID string, nodeMap map[string]*Tas
 				if canRun {
 					// Execute Node
 					progressMade = true
-					te.runNode(graphID, node)
+					te.runNode(graphID, node, ctxEnv)
 
 					// Phase 14: Mutating DAGs (Self-Repairing Logic)
 					if node.Status == StatusFailed {
@@ -197,13 +208,21 @@ func (te *TaskEngine) ValidateAndExecute(graphID string, nodeMap map[string]*Tas
 	}()
 }
 
-func (te *TaskEngine) runNode(runID string, node *TaskNode) {
+func (te *TaskEngine) runNode(runID string, node *TaskNode, ctxEnv map[string]string) {
 	// 1. Mark Running
 	node.Status = StatusRunning
 	te.emitEvent(runID, node.ID, StatusRunning, 0, "")
 
 	// 2. Execute
-	parts := strings.Fields(node.Command)
+	// Expand Context Variables safely before sanitization pipeline
+	cmdString := os.Expand(node.Command, func(k string) string {
+		if val, err := ctxEnv[k]; err {
+			return val
+		}
+		return os.Getenv(k)
+	})
+
+	parts := strings.Fields(cmdString)
 	if len(parts) == 0 {
 		node.Status = StatusCompleted
 		te.emitEvent(runID, node.ID, StatusCompleted, 100, "")
@@ -212,7 +231,7 @@ func (te *TaskEngine) runNode(runID string, node *TaskNode) {
 
 	// reqID tracking: Use graphID + taskNode ID for precise kill control
 	reqID := fmt.Sprintf("%s-%s", runID, node.ID)
-	output, err := ExecuteSafeCommand(reqID, node.Command, []string{})
+	output, err := ExecuteSafeCommand(reqID, parts[0], parts[1:], ctxEnv)
 
 	if err != nil {
 		node.Status = StatusFailed
@@ -228,6 +247,9 @@ func (te *TaskEngine) runNode(runID string, node *TaskNode) {
 
 	// 3. Mark Completed
 	node.Status = StatusCompleted
+	if ctxEnv != nil {
+		ctxEnv[fmt.Sprintf("CTX_%s_OUT", node.ID)] = strings.TrimSpace(output)
+	}
 	te.emitEvent(runID, node.ID, StatusCompleted, 100, output)
 }
 
@@ -261,16 +283,7 @@ func (te *TaskEngine) AttemptDagMutation(graphID string, failedNode *TaskNode, n
 	// Phase 14: Query Semantic Graph for past similar failures
 	semanticContext := ""
 	if GlobalVectorDB != nil {
-		vectors, err := GlobalVectorDB.GenerateEmbeddings([]string{"search_query: error running command " + failedNode.Command})
-		if err == nil && len(vectors) > 0 {
-			results := GlobalVectorDB.Search(vectors[0], 2)
-			if len(results) > 0 {
-				semanticContext = "\n\nPast Historical Context (Semantic Graph):\n"
-				for _, res := range results {
-					semanticContext += fmt.Sprintf("File Context:\n```\n%s\n```\n\n", res.Chunk.Text)
-				}
-			}
-		}
+		semanticContext = GlobalVectorDB.CompileGraphContext("error running command " + failedNode.Command, 2)
 	}
 
 	prompt := fmt.Sprintf(`The Task Pipeline failed at node '%s'.
@@ -316,7 +329,13 @@ Output ONLY the two raw command strings separated by a newline. Do not include b
 		go func(branchID int, cmd string) {
 			log.Printf("   -> [Branch %d]: %s", branchID, cmd)
 			reqID := fmt.Sprintf("%s-branch%d", failedNode.ID, branchID)
-			_, err := ExecuteSafeCommand(reqID, cmd, []string{})
+
+			parts := strings.Fields(cmd)
+			if len(parts) == 0 {
+				return
+			}
+
+			_, err := ExecuteSafeCommand(reqID, parts[0], parts[1:], nil)
 			if err == nil {
 				winnerChan <- cmd
 			}
@@ -380,6 +399,14 @@ Otherwise, output ONLY the raw bash command string, nothing else. No markdown.`
 
 	conversation := "GOAL: " + goal + "\n\n"
 
+	// Phase 14: GraphRAG Context via CompileGraphContext
+	if GlobalVectorDB != nil {
+		ragContext := GlobalVectorDB.CompileGraphContext(goal, 3)
+		if ragContext != "" {
+			conversation += ragContext + "\n\n"
+		}
+	}
+
 	for step := 1; step <= 10; step++ { // Hard cap at 10 steps to prevent infinite loops
 		te.emitEvent(graphID, fmt.Sprintf("step-%d", step), StatusRunning, step*10, "Planning next step...")
 
@@ -413,9 +440,15 @@ Otherwise, output ONLY the raw bash command string, nothing else. No markdown.`
 
 		te.emitEvent(graphID, fmt.Sprintf("step-%d", step), StatusRunning, step*10, "Executing: "+cmdStr)
 
+		parts := strings.Fields(cmdStr)
+		if len(parts) == 0 {
+			te.emitEvent(graphID, fmt.Sprintf("step-%d", step), StatusFailed, step*10, "Agent generated empty command.")
+			return
+		}
+
 		// Execute the command via Sandbox
 		reqID := fmt.Sprintf("%s-step%d", graphID, step)
-		output, err := ExecuteSafeCommand(reqID, cmdStr, []string{})
+		output, err := ExecuteSafeCommand(reqID, parts[0], parts[1:], nil)
 
 		logStr := output
 		status := StatusCompleted

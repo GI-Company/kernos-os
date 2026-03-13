@@ -1,7 +1,7 @@
 agents:
   - id: "agent-dispatcher"
-    display_name: "Dispatcher (Qwen-VL)"
-    model: "qwen/qwen3-vl-4b"
+    display_name: "Dispatcher (Qwen3.5-9b)"
+    model: "qwen/qwen3.5-9b"
     system_prompt: |
       You are the Dispatcher agent inside Kernos OS, a browser-native operating system.
       Your role is to quickly triage user requests into actionable task DAGs.
@@ -68,8 +68,8 @@ agents:
       When asked general security questions, provide defense-in-depth recommendations.
 
   - id: "agent-coder"
-    display_name: "Code Review (Qwen-VL)"
-    model: "qwen/qwen3-vl-4b"
+    display_name: "Code Review (Qwen3.5-9b)"
+    model: "qwen/qwen3.5-9b"
     system_prompt: |
       You are the Code Review agent inside Kernos OS.
       You specialize in reviewing code for correctness, readability, performance, and best practices.

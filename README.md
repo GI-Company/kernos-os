@@ -35,8 +35,8 @@ A traditional OS organizes memory via a hierarchical file system tree. Kernos re
 ### 2. Speculative RAG Execution
 Kernos utilizes local LLMs for **Speculative Execution**. The OS evaluates partial terminal input, predicts the most likely complete command, and silently pre-executes it in an invisible sandbox jail. When the user submits the command, the OS yields the pre-computed `stdout` with perceived zero-latency.
 
-### 3. Concurrent DAG Mutation
-Traditional shell scripts run sequentially and fail abruptly. Kernos executes multi-step objectives using **Directed Acyclic Graphs (DAGs)**. If a node fails during execution, the "Architect" agent synthesizes multiple divergent recovery paths. The engine executes these alternative branches in parallel; the first to exit successfully collapses the state and is grafted back into the DAG.
+### 3. Concurrent DAG Mutation & Shared Contexts
+Traditional shell scripts run sequentially and fail abruptly. Kernos executes multi-step objectives using **Directed Acyclic Graphs (DAGs)** with **Shared Memory Contexts** (`$CTX_<nodeID>_OUT`), allowing nodes to securely pass sandboxed outputs to downstream dependencies. If a node fails during execution, the "Architect" agent synthesizes multiple divergent recovery paths. The engine executes these alternative branches in parallel; the first to exit successfully collapses the state and is grafted back into the DAG.
 
 ---
 
@@ -62,12 +62,12 @@ Kernos runs **6 specialized AI agents** as kernel-level goroutines — all using
 
 | Agent | Model | Role |
 |---|---|---|
-| **Dispatcher** | Qwen-VL-4B | Fast triage — converts requests to DAGs, handles multimodal (text + image) |
-| **Architect** | Qwen-Thinking | Deep review — validates DAGs, synthesizes recovery paths, provides second opinions |
-| **Kernos Assistant** | Qwen-Thinking | Conversational AI — multi-turn chat with 10-turn sliding context window |
-| **DevOps Engineer** | Qwen-Thinking | Infrastructure specialist — deployment, CI/CD, system administration |
-| **Security Auditor** | Qwen-Thinking | Vulnerability detection — code security review, threat modeling |
-| **Code Review** | Qwen-VL-4B | Code quality — identifies bugs, performance issues, and best practices |
+| **Dispatcher** | Qwen3.5-9B | Fast triage — converts requests to DAGs, evaluates system events |
+| **Architect** | Qwen3.5-9B | Deep review — validates DAGs, synthesizes recovery paths, navigates GraphRAG |
+| **Kernos Assistant** | Qwen3.5-9B | Conversational AI — multi-turn chat with 10-turn sliding context window |
+| **DevOps Engineer** | Qwen3.5-9B | Infrastructure specialist — deployment, CI/CD, system administration |
+| **Security Auditor** | Qwen3.5-9B | Vulnerability detection — code security review, threat modeling |
+| **Code Review** | Qwen3.5-9B | Code quality — identifies bugs, performance issues, and best practices |
 
 ### Agent-to-Agent Communication
 Agents communicate autonomously via the `agent.internal` bus topic. When an agent produces a low-confidence response (< 0.5), it automatically delegates to the Architect for a second opinion — no human intervention required.
@@ -126,9 +126,8 @@ The entire Operating System — the Go microkernel, the React graphical environm
 
 1. Download and install **[LM Studio](https://lmstudio.ai/)**
 2. Download these models:
-   - `qwen/qwen3-vl-4b` — Multimodal vision-language model
-   - `qwen/qwen3-4b-thinking-2507` — Deep reasoning model
-   - `text-embedding-nomic-embed-text-v1.5` — Vector embeddings
+   - `qwen/qwen3.5-9b` — Unified Deep Reasoning & GraphRAG Extraction Model
+   - `text-embedding-nomic-embed-text-v1.5` (Load 6x parallel instances) — High-throughput parallel vector embeddings
 3. Start the **Local Server** on `http://localhost:1234/v1`
 
 > **Alternative Models:** Update the `model` strings in `server/agents.yaml` to match your preferred models.

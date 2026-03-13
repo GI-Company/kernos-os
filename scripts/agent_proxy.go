@@ -32,7 +32,7 @@ func main() {
 	role := flag.String("role", "agent", "The role of this client")
 	model := flag.String("model", "qwen/qwen3-vl-4b", "The LM Studio model to use")
 	systemPrompt := flag.String("system", "You are an autonomous AI agent integrated into Kernos OS.", "System prompt for the LLM")
-	lmStudioQueryURL := flag.String("lmurl", "http://192.168.1.82:1234/v1/chat/completions", "LM Studio API URL")
+	lmStudioQueryURL := flag.String("lmurl", "http://127.0.0.1:1234/v1/chat/completions", "LM Studio API URL")
 	flag.Parse()
 
 	interrupt := make(chan os.Signal, 1)

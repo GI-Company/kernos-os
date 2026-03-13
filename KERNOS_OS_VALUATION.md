@@ -46,7 +46,7 @@ Strategic partnerships with OEM hardware vendors. Kernos OS becomes the default 
 ## 5. Risk Factors & Mitigations
 
 *   **Risk:** Local LLMs are not as smart as GPT-4.
-    *   **Mitigation:** The "Mutating DAGs" architecture. The OS verifies output mathematically. Even if a local 4B parameter model makes a mistake, the Architect agent catches it in the execution sandbox.
+    *   **Mitigation:** The "Mutating DAGs" architecture. The OS verifies output mathematically. Even if a local 9B parameter model makes a mistake, the Architect agent catches it in the execution sandbox and dynamically re-routes the task graph.
 *   **Risk:** Browser limitations for intensive tasks.
     *   **Mitigation:** The React UI is merely a terminal. Heavy lifting (vector indexing, AST parsing, esbuild transpilation) runs in the compiled Go host process, not the browser engine.
 

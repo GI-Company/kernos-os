@@ -53,7 +53,7 @@ type VectorDB struct {
 var GlobalVectorDB *VectorDB
 
 func InitVectorDB(lmStudioURL string) *VectorDB {
-	// E.g. "http://192.168.1.82:1234/v1/chat/completions" -> "http://192.168.1.82:1234/v1/embeddings"
+	// E.g. "http://127.0.0.1:1234/v1/chat/completions" -> "http://127.0.0.1:1234/v1/embeddings"
 	embedURL := strings.Replace(lmStudioURL, "/chat/completions", "/embeddings", 1)
 
 	dbPath := ".kernos/vfs.db"
@@ -64,19 +64,41 @@ func InitVectorDB(lmStudioURL string) *VectorDB {
 		log.Fatalf("[VectorDB] Failed to open SQLite DB: %v", err)
 	}
 
-	createTableQuery := `
-	CREATE TABLE IF NOT EXISTS chunks (
-		id TEXT PRIMARY KEY,
-		file_path TEXT,
-		start_line INTEGER,
-		end_line INTEGER,
-		text TEXT,
-		vector BLOB,
-		weight REAL,
-		last_access_time DATETIME
-	);`
-	if _, err := sqliteDB.Exec(createTableQuery); err != nil {
-		log.Fatalf("[VectorDB] Failed to create schema: %v", err)
+	schemaQueries := []string{
+		`CREATE TABLE IF NOT EXISTS chunks (
+			id TEXT PRIMARY KEY,
+			file_path TEXT,
+			start_line INTEGER,
+			end_line INTEGER,
+			text TEXT,
+			vector BLOB,
+			weight REAL,
+			last_access_time DATETIME
+		);`,
+		`CREATE TABLE IF NOT EXISTS entities (
+			id TEXT PRIMARY KEY,
+			name TEXT,
+			type TEXT,
+			description TEXT
+		);`,
+		`CREATE TABLE IF NOT EXISTS relationships (
+			source TEXT,
+			target TEXT,
+			type TEXT,
+			description TEXT,
+			PRIMARY KEY (source, target, type)
+		);`,
+		`CREATE TABLE IF NOT EXISTS chunk_entities (
+			chunk_id TEXT,
+			entity_id TEXT,
+			PRIMARY KEY (chunk_id, entity_id)
+		);`,
+	}
+	
+	for _, q := range schemaQueries {
+		if _, err := sqliteDB.Exec(q); err != nil {
+			log.Fatalf("[VectorDB] Failed to create schema: %v", err)
+		}
 	}
 
 	db := &VectorDB{
@@ -88,6 +110,9 @@ func InitVectorDB(lmStudioURL string) *VectorDB {
 	}
 	db.LoadFromDB()
 	
+	// Start the Background Graph Builder for GraphRAG
+	go db.startGraphBuilderWorker(lmStudioURL)
+
 	GlobalVectorDB = db
 	return db
 }
@@ -271,6 +296,57 @@ func (db *VectorDB) Search(queryVector []float32, topK int) []SearchResult {
 	return results
 }
 
+// CompileGraphContext queries the Vector search space for top K semantics, 
+// then executes an SQL Graph Traversal to extract relational edges from the GraphRAG entities table.
+// Phase 14: Integrating GraphRAG directly into the Architect context wave.
+func (db *VectorDB) CompileGraphContext(query string, topK int) string {
+	// First, get the raw semantic neighborhood
+	vectors, err := db.GenerateEmbeddings([]string{query})
+	if err != nil || len(vectors) == 0 {
+		return ""
+	}
+
+	results := db.Search(vectors[0], topK)
+	if len(results) == 0 {
+		return ""
+	}
+
+	var contextBuilder strings.Builder
+	contextBuilder.WriteString("🕸️ GraphRAG Context (Knowledge Graph & Semantic Sources):\n\n")
+
+	for _, res := range results {
+		// 1. Append raw source context
+		contextBuilder.WriteString(fmt.Sprintf("-- SOURCE [%s] (Sim: %.2f) --\n%s\n\n", res.Chunk.FilePath, res.Similarity, res.Chunk.Text))
+
+		// 2. Perform SQLite Graph Traversal on the local context node
+		rows, err := db.DB.Query(`
+			SELECT e.name, e.type, e.description
+			FROM entities e
+			JOIN chunk_entities ce ON e.id = ce.entity_id
+			WHERE ce.chunk_id = ?
+		`, res.Chunk.ID)
+
+		if err == nil {
+			var entities []string
+			for rows.Next() {
+				var name, etype, desc string
+				if err := rows.Scan(&name, &etype, &desc); err == nil {
+					entities = append(entities, fmt.Sprintf("- [%s] %s: %s", etype, name, desc))
+				}
+			}
+			rows.Close()
+
+			if len(entities) > 0 {
+				contextBuilder.WriteString("🔗 Graph Entities Extracted:\n")
+				contextBuilder.WriteString(strings.Join(entities, "\n"))
+				contextBuilder.WriteString("\n\n")
+			}
+		}
+	}
+
+	return contextBuilder.String()
+}
+
 // DecayWeights implements the Hippocampus temporal decay equation: W_new = W_old * e^(-lambda * dt)
 func (db *VectorDB) DecayWeights() {
 	db.mu.Lock()
@@ -328,6 +404,7 @@ func (db *VectorDB) AutoIndexWorkspace(dirPath string) {
 
 			// STRICT SCALABILITY RULES: Ignore massive, binary, or irrelevant folders
 			if strings.Contains(path, "/.") ||
+				strings.Contains(path, ".kernos/") ||
 				strings.Contains(path, "/dist/") ||
 				strings.Contains(path, "node_modules") ||
 				strings.Contains(path, "/vendor/") ||
@@ -335,7 +412,7 @@ func (db *VectorDB) AutoIndexWorkspace(dirPath string) {
 				return nil
 			}
 			ext := filepath.Ext(path)
-			if ext == "" || ext == ".png" || ext == ".jpg" || ext == ".exe" || ext == ".zip" || ext == ".tar" {
+			if ext == "" || ext == ".png" || ext == ".jpg" || ext == ".exe" || ext == ".zip" || ext == ".tar" || ext == ".db" || ext == ".sqlite" {
 				return nil // Source files only
 			}
 
