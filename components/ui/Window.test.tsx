@@ -45,7 +45,8 @@ describe('Window Component', () => {
     height: 400,
     zIndex: 1,
     isMinimized: false,
-    isMaximized: false
+    isMaximized: false,
+    desktopIndex: 0
   };
 
   it('renders the window with the correct title', () => {
