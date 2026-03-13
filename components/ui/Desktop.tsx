@@ -3,10 +3,46 @@ import * as Lucide from 'lucide-react';
 import { useOS } from '../../store';
 import { kernel } from '../../services/kernel';
 import { Envelope } from '../../types';
+import { useContextMenu } from './ContextMenu';
 
 export const Desktop: React.FC = () => {
     const { shortcuts, openWindow } = useOS();
     const [loadingShortcut, setLoadingShortcut] = useState<string | null>(null);
+    const { showMenu } = useContextMenu();
+
+    const handleDesktopMenu = (e: React.MouseEvent) => {
+        showMenu(e, [
+            { label: 'View', icon: <Lucide.LayoutGrid size={14}/>, onClick: () => {} },
+            { label: 'Sort by', icon: <Lucide.ArrowDownUp size={14}/>, onClick: () => {} },
+            { label: 'Refresh', icon: <Lucide.RefreshCw size={14}/>, onClick: () => {} },
+            { divider: true, onClick: () => {} },
+            { label: 'New Folder', icon: <Lucide.FolderPlus size={14}/>, onClick: () => {} },
+            { label: 'New Shortcut', icon: <Lucide.Link size={14}/>, onClick: () => {} },
+            { divider: true, onClick: () => {} },
+            { label: 'Display Settings', icon: <Lucide.Monitor size={14}/>, onClick: () => openWindow('settings', 'Settings') },
+            { label: 'Personalize', icon: <Lucide.Image size={14}/>, onClick: () => openWindow('settings', 'Settings') },
+        ]);
+    };
+
+    const handleShortcutMenu = (e: React.MouseEvent, id: string, name: string) => {
+        e.stopPropagation(); // prevent desktop menu
+        showMenu(e, [
+            { label: 'Open', icon: <Lucide.Play size={14}/>, onClick: () => handleLaunchShortcut(id, shortcuts.find(s=>s.id===id)?.appletPath || '') },
+            { label: 'Open File Location', icon: <Lucide.FolderOpen size={14}/>, onClick: () => openWindow('files', 'File System') },
+            { divider: true, onClick: () => {} },
+            { label: 'Pin to Taskbar', icon: <Lucide.Pin size={14}/>, onClick: () => {
+                const pinned = JSON.parse(localStorage.getItem('kernos_pinned_apps') || '[]');
+                if (!pinned.includes('applet')) {
+                    localStorage.setItem('kernos_pinned_apps', JSON.stringify([...pinned, 'applet']));
+                }
+            }},
+            { divider: true, onClick: () => {} },
+            { label: 'Rename', icon: <Lucide.Edit2 size={14}/>, onClick: () => {} },
+            { label: 'Delete', icon: <Lucide.Trash2 size={14}/>, danger: true, onClick: () => {} },
+            { divider: true, onClick: () => {} },
+            { label: 'Properties', icon: <Lucide.Info size={14}/>, onClick: () => {} }
+        ]);
+    };
 
     const handleLaunchShortcut = (id: string, appletPath: string) => {
         if (loadingShortcut) return;
@@ -63,7 +99,10 @@ export const Desktop: React.FC = () => {
     };
 
     return (
-        <div className="absolute inset-0 z-0 p-6 flex flex-col gap-4 flex-wrap content-start">
+        <div 
+            className="absolute inset-0 z-0 p-6 flex flex-col gap-4 flex-wrap content-start"
+            onContextMenu={handleDesktopMenu}
+        >
             {shortcuts.map((shortcut) => {
                 const Icon = (Lucide as any)[shortcut.icon] || Lucide.FileCode;
                 const isLoading = loadingShortcut === shortcut.id;
@@ -72,6 +111,7 @@ export const Desktop: React.FC = () => {
                     <div
                         key={shortcut.id}
                         onDoubleClick={() => handleLaunchShortcut(shortcut.id, shortcut.appletPath)}
+                        onContextMenu={(e) => handleShortcutMenu(e, shortcut.id, shortcut.name)}
                         className={`w-24 group flex flex-col items-center gap-2 p-2 rounded hover:bg-white/10 cursor-pointer transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
                         title={`Double-click to launch ${shortcut.name}`}
                     >

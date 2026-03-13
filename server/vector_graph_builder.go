@@ -134,7 +134,7 @@ CODE CHUNK:
 
 func queryGraphModel(lmURL, prompt string) (string, error) {
 	reqBody := map[string]interface{}{
-		"model": "qwen/qwen3.5-9b",
+		"model": "mistralai/codestral-22b-v0.1",
 		"messages": []map[string]string{
 			{"role": "system", "content": "You are a JSON-only structural code analyzer."},
 			{"role": "user", "content": prompt},

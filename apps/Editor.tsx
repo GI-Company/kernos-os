@@ -45,8 +45,9 @@ export const EditorApp: React.FC<EditorProps> = (props) => {
   const handleAiAsk = () => {
     setAiStatus('thinking');
     setAiMessage('');
-    const reqId = Math.random().toString(36).substring(7);
-    kernel.publish('ai.chat', { _request_id: reqId, prompt: `Context:\n${content}\n\nExplain this code.` });
+    kernel.sendToAgent('agent-coder', 'agent.chat', {
+      msg: `Review and explain this code:\n\n${content}`
+    });
   };
 
   const handleSave = () => {
@@ -69,11 +70,12 @@ export const EditorApp: React.FC<EditorProps> = (props) => {
 
   useEffect(() => {
     const unsub = kernel.subscribe((env: Envelope) => {
-      if (env.topic === 'ai.stream') {
+      if (env.topic === 'agent.chat:stream' && env.from === 'agent-coder') {
         setAiStatus('streaming');
-        setAiMessage(prev => prev + env.payload.chunk);
+        const chunk = (env.payload as any)?.chunk || '';
+        setAiMessage(prev => prev + chunk);
       }
-      if (env.topic === 'ai.done') {
+      if (env.topic === 'agent.chat:reply' && env.from === 'agent-coder') {
         setAiStatus('idle');
       }
 

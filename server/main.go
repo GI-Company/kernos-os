@@ -37,23 +37,87 @@ var upgrader = websocket.Upgrader{
 
 // SECURITY: Only allow these specific commands to be executed.
 var ALLOWED_COMMANDS = map[string]bool{
+	// ── Core File Operations ──
 	"ls":      true,
-	"echo":    true,
 	"cat":     true,
-	"mkdir":   true,
+	"head":    true,
+	"tail":    true,
 	"touch":   true,
+	"mkdir":   true,
+	"cp":      true,
+	"mv":      true,
+	"find":    true,
+	"tree":    true,
+	"file":    true,
+	"stat":    true,
+	"wc":      true,
+	"sort":    true,
+	"uniq":    true,
+	"diff":    true,
+	"tee":     true,
+	"less":    true,
+	"more":    true,
+
+	// ── Text Processing ──
+	"echo":    true,
+	"grep":    true,
+	"sed":     true,
+	"awk":     true,
+	"cut":     true,
+	"tr":      true,
+	"xargs":   true,
+	"jq":      true,
+
+	// ── System Info ──
+	"help":    true,
 	"date":    true,
 	"whoami":  true,
-	"grep":    true,
-	"wc":      true,
-	"git":      true, // Caution: git can still be powerful
-	"node":     true, // Caution: node allows code execution
+	"uname":   true,
+	"uptime":  true,
+	"hostname": true,
+	"id":      true,
+	"env":     true,
+	"printenv": true,
+	"which":   true,
+	"type":    true,
+	"df":      true,
+	"du":      true,
+	"free":    true,
+	"top":     true,
+	"ps":      true,
+	"pwd":     true,
+
+	// ── Networking (Read-Only) ──
+	"ping":    true,
+	"curl":    true,
+	"dig":     true,
+	"nslookup": true,
+	"ifconfig": true,
+	"netstat":  true,
+
+	// ── Developer Tools ──
+	"git":      true,
+	"go":       true,
+	"node":     true,
+	"npm":      true,
+	"npx":      true,
 	"python3":  true,
 	"python":   true,
+	"pip":      true,
+	"pip3":     true,
 	"sqlite3":  true,
 	"rustc":    true,
 	"cargo":    true,
+	"make":     true,
+
+	// ── Media & Misc ──
 	"ffmpeg":   true,
+	"tar":      true,
+	"gzip":     true,
+	"zip":      true,
+	"unzip":    true,
+	"sh":       true,
+	"bash":     true,
 }
 
 type Envelope struct {
@@ -186,11 +250,36 @@ export default function ` + name + `() {
 	}
 
 	// ---------------------------------------------------------------------------
+	// ZOMBIE PROCESS CLEANUP — Kill stale instances & free port 8080
+	// Ensures reboot never fails with "address already in use"
+	// ---------------------------------------------------------------------------
+	cleanupZombies()
+
+	// ---------------------------------------------------------------------------
 	// ZERO-TRUST PERSISTENT SYSTEM DB
 	// Initializes ~/.kernos/sys.db to load the root token, JWT secrets, and config.
 	// ---------------------------------------------------------------------------
 	InitSysDB()
 	log.Printf("🔐 Persistent Root Auth Token (sys.db): %s", AuthToken)
+
+	// Initialize User Account System
+	userDB, err := InitUserAccountDB()
+	if err != nil {
+		log.Printf("⚠️ [UserDB] Failed to init user accounts: %v", err)
+	} else {
+		GlobalUserDB = userDB
+		if !userDB.HasUsers() {
+			log.Printf("👤 [UserDB] No users found — first-run setup will be shown")
+		} else {
+			users, _ := userDB.ListUsers()
+			log.Printf("👤 [UserDB] %d user account(s) loaded", len(users))
+		}
+	}
+
+	// Initialize Chat History
+	if GlobalSysDB != nil {
+		InitChatHistoryDB(GlobalSysDB.DB)
+	}
 
 	bus := &Bus{clients: make(map[*websocket.Conn]*Client)}
 	taskEngine := NewTaskEngine(bus)
@@ -594,6 +683,16 @@ func handleEnvelope(bus *Bus, env Envelope, te *TaskEngine, pe *PredictionEngine
 		}
 	}()
 
+	// ── BIOS Setup Handlers ──
+	if strings.HasPrefix(env.Topic, "bios.") {
+		handleBIOSConfig(bus, env)
+	}
+
+	// ── Chat History Handlers ──
+	if strings.HasPrefix(env.Topic, "chat.") {
+		handleChatHistory(bus, env)
+	}
+
 	if strings.HasPrefix(env.Topic, "p2p.") {
 		p2p.HandleP2P(env)
 	}
@@ -613,6 +712,12 @@ func handleEnvelope(bus *Bus, env Envelope, te *TaskEngine, pe *PredictionEngine
 	}
 	if env.Topic == "vfs:read" {
 		handleVFSRead(bus, env)
+	}
+	if env.Topic == "vfs:write" {
+		handleVFSWrite(bus, env)
+	}
+	if env.Topic == "vfs:create" {
+		handleVFSCreate(bus, env)
 	}
 	if env.Topic == "editor.typing" {
 		pe.HandleEditorTyping(env)
@@ -709,6 +814,92 @@ func handleEnvelope(bus *Bus, env Envelope, te *TaskEngine, pe *PredictionEngine
 			}
 		}
 	}
+
+	// ── User Account Handlers ──────────────────────────────────
+	if env.Topic == "user.list" {
+		if GlobalUserDB != nil {
+			users, _ := GlobalUserDB.ListUsers()
+			bus.Publish(Envelope{
+				Topic: "user.list:resp",
+				From:  "kernel",
+				To:    env.From,
+				Time:  time.Now().Format(time.RFC3339),
+				Payload: map[string]interface{}{
+					"users":     users,
+					"has_users": GlobalUserDB.HasUsers(),
+				},
+			})
+		}
+	}
+	if env.Topic == "user.signup" {
+		if GlobalUserDB != nil {
+			payload, ok := env.Payload.(map[string]interface{})
+			if ok {
+				username, _ := payload["username"].(string)
+				password, _ := payload["password"].(string)
+				displayName, _ := payload["display_name"].(string)
+
+				user, err := GlobalUserDB.CreateUser(username, password, displayName, "admin")
+				if err != nil {
+					bus.Publish(Envelope{
+						Topic:   "user.signup:resp",
+						From:    "kernel",
+						To:      env.From,
+						Payload: map[string]interface{}{"error": err.Error()},
+					})
+				} else {
+					if GlobalSysDB != nil {
+						GlobalSysDB.LogAudit("user.signup", username, "User account created")
+					}
+					bus.Publish(Envelope{
+						Topic: "user.signup:resp",
+						From:  "kernel",
+						To:    env.From,
+						Time:  time.Now().Format(time.RFC3339),
+						Payload: map[string]interface{}{
+							"success": true,
+							"user":    user,
+						},
+					})
+				}
+			}
+		}
+	}
+	if env.Topic == "user.login" {
+		if GlobalUserDB != nil {
+			payload, ok := env.Payload.(map[string]interface{})
+			if ok {
+				username, _ := payload["username"].(string)
+				password, _ := payload["password"].(string)
+
+				user, err := GlobalUserDB.Authenticate(username, password)
+				if err != nil {
+					bus.Publish(Envelope{
+						Topic:   "user.login:resp",
+						From:    "kernel",
+						To:      env.From,
+						Payload: map[string]interface{}{"error": err.Error()},
+					})
+				} else {
+					if GlobalSysDB != nil {
+						GlobalSysDB.LogAudit("user.login", username, "User logged in")
+					}
+					bus.Publish(Envelope{
+						Topic: "user.login:resp",
+						From:  "kernel",
+						To:    env.From,
+						Time:  time.Now().Format(time.RFC3339),
+						Payload: map[string]interface{}{
+							"success":  true,
+							"user":     user,
+							"data_dir": GlobalUserDB.GetUserDataDir(username),
+						},
+					})
+				}
+			}
+		}
+	}
+
 	if env.Topic == "sys.subscribe" {
 		payload, ok := env.Payload.(map[string]interface{})
 		if ok {
@@ -824,6 +1015,148 @@ func handleVFSRead(bus *Bus, env Envelope) {
 			"_request_id": reqId,
 			"id":          id,
 			"content":     string(content),
+		},
+	})
+}
+
+// handleVFSWrite writes content to an existing file (Editor Save)
+func handleVFSWrite(bus *Bus, env Envelope) {
+	payload, ok := env.Payload.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	id, _ := payload["id"].(string)
+	content, _ := payload["content"].(string)
+
+	if id == "" {
+		return
+	}
+
+	// SECURITY: Path traversal protection
+	if strings.Contains(id, "..") || strings.HasPrefix(id, "/") {
+		bus.Publish(Envelope{
+			Topic: "vfs:write:ack",
+			From:  "kernel",
+			To:    env.From,
+			Payload: map[string]interface{}{
+				"id":    id,
+				"error": "PERMISSION DENIED: Path traversal or absolute paths not allowed",
+			},
+		})
+		return
+	}
+
+	// Undo snapshot: save old content before overwriting
+	if GlobalSysDB != nil {
+		oldContent, err := os.ReadFile(id)
+		if err == nil {
+			GlobalSysDB.LogUndoSnapshot("vfs.write", id, string(oldContent))
+		}
+	}
+
+	err := os.WriteFile(id, []byte(content), 0644)
+	if err != nil {
+		log.Printf("[VFS] Write Error (%s): %v", id, err)
+		bus.Publish(Envelope{
+			Topic: "vfs:write:ack",
+			From:  "kernel",
+			To:    env.From,
+			Payload: map[string]interface{}{
+				"id":    id,
+				"error": err.Error(),
+			},
+		})
+		return
+	}
+
+	log.Printf("[VFS] ✏️ File written: %s (%d bytes)", id, len(content))
+	if GlobalSysDB != nil {
+		GlobalSysDB.LogAudit("vfs:write", env.From, "Wrote file: "+id)
+	}
+
+	bus.Publish(Envelope{
+		Topic: "vfs:write:ack",
+		From:  "kernel",
+		To:    env.From,
+		Time:  time.Now().Format(time.RFC3339),
+		Payload: map[string]interface{}{
+			"id":   id,
+			"size": len(content),
+		},
+	})
+}
+
+// handleVFSCreate creates a new file or directory
+func handleVFSCreate(bus *Bus, env Envelope) {
+	payload, ok := env.Payload.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	name, _ := payload["name"].(string)
+	parentId, _ := payload["parentId"].(string)
+	fileType, _ := payload["type"].(string)
+	content, _ := payload["content"].(string)
+
+	if name == "" {
+		return
+	}
+
+	// SECURITY: Path traversal protection
+	if strings.Contains(name, "..") || strings.Contains(name, "/") {
+		bus.Publish(Envelope{
+			Topic: "vfs:create:ack",
+			From:  "kernel",
+			To:    env.From,
+			Payload: map[string]interface{}{
+				"error": "PERMISSION DENIED: Invalid filename",
+			},
+		})
+		return
+	}
+
+	// Resolve target path
+	targetPath := name
+	if parentId != "" && parentId != "home" {
+		targetPath = filepath.Join(parentId, name)
+	}
+
+	if fileType == "directory" {
+		err := os.MkdirAll(targetPath, 0755)
+		if err != nil {
+			log.Printf("[VFS] Create Dir Error: %v", err)
+			return
+		}
+		log.Printf("[VFS] 📁 Directory created: %s", targetPath)
+	} else {
+		// Ensure parent directory exists
+		dir := filepath.Dir(targetPath)
+		if dir != "." {
+			os.MkdirAll(dir, 0755)
+		}
+
+		err := os.WriteFile(targetPath, []byte(content), 0644)
+		if err != nil {
+			log.Printf("[VFS] Create File Error: %v", err)
+			return
+		}
+		log.Printf("[VFS] 📄 File created: %s (%d bytes)", targetPath, len(content))
+	}
+
+	if GlobalSysDB != nil {
+		GlobalSysDB.LogAudit("vfs:create", env.From, "Created: "+targetPath)
+	}
+
+	bus.Publish(Envelope{
+		Topic: "vfs:create:ack",
+		From:  "kernel",
+		To:    env.From,
+		Time:  time.Now().Format(time.RFC3339),
+		Payload: map[string]interface{}{
+			"id":   targetPath,
+			"name": name,
+			"type": fileType,
 		},
 	})
 }
@@ -1052,6 +1385,39 @@ var (
 )
 
 func ExecuteSafeCommand(reqID string, cmdStr string, args []string, extraEnv map[string]string) (string, error) {
+	// Built-in: `help` command lists all available Kernos OS commands
+	if cmdStr == "help" {
+		return `╔══════════════════════════════════════════════════╗
+║           KERNOS OS — COMMAND REFERENCE           ║
+╠══════════════════════════════════════════════════╣
+║                                                  ║
+║  📁 FILE OPERATIONS                              ║
+║    ls, cat, head, tail, touch, mkdir, cp, mv,    ║
+║    find, tree, file, stat, wc, sort, uniq, diff  ║
+║                                                  ║
+║  📝 TEXT PROCESSING                              ║
+║    echo, grep, sed, awk, cut, tr, xargs, jq      ║
+║                                                  ║
+║  🖥️  SYSTEM INFO                                 ║
+║    help, date, whoami, uname, uptime, hostname,  ║
+║    id, env, printenv, which, df, du, ps, pwd     ║
+║                                                  ║
+║  🌐 NETWORKING                                   ║
+║    ping, curl, dig, nslookup, ifconfig, netstat  ║
+║                                                  ║
+║  🛠️  DEVELOPER TOOLS                             ║
+║    git, go, node, npm, npx, python3, python,     ║
+║    pip, pip3, sqlite3, rustc, cargo, make         ║
+║                                                  ║
+║  📦 MEDIA & ARCHIVE                              ║
+║    ffmpeg, tar, gzip, zip, unzip, sh, bash       ║
+║                                                  ║
+╠══════════════════════════════════════════════════╣
+║  Type any command above in the Terminal or ask    ║
+║  the AI Chat to run it for you via DAG.           ║
+╚══════════════════════════════════════════════════╝`, nil
+	}
+
 	// SECURITY CHECK 1: Is the command allowed?
 	if !ALLOWED_COMMANDS[cmdStr] {
 		return "", fmt.Errorf("PERMISSION DENIED: Command '%s' is not in the kernel allowlist.", cmdStr)
@@ -1146,4 +1512,46 @@ func ExecuteSafeCommand(reqID string, cmdStr string, args []string, extraEnv map
 	}
 
 	return string(output), err
+}
+
+// cleanupZombies kills any stale kernos_server processes and frees port 8080.
+// This ensures reboot never fails with "address already in use".
+func cleanupZombies() {
+	myPID := os.Getpid()
+
+	// 1. Kill any process holding port 8080
+	lsofOut, err := exec.Command("lsof", "-ti", ":8080").Output()
+	if err == nil && len(lsofOut) > 0 {
+		pids := strings.Fields(strings.TrimSpace(string(lsofOut)))
+		for _, pidStr := range pids {
+			pid := 0
+			fmt.Sscanf(pidStr, "%d", &pid)
+			if pid > 0 && pid != myPID {
+				proc, err := os.FindProcess(pid)
+				if err == nil {
+					proc.Signal(os.Kill)
+					log.Printf("🧹 Killed zombie process on :8080 (PID %d)", pid)
+				}
+			}
+		}
+		// Brief pause to let the port release
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// 2. Kill any stale kernos_server processes
+	pgrepOut, _ := exec.Command("pgrep", "-f", "kernos_server").Output()
+	if len(pgrepOut) > 0 {
+		pids := strings.Fields(strings.TrimSpace(string(pgrepOut)))
+		for _, pidStr := range pids {
+			pid := 0
+			fmt.Sscanf(pidStr, "%d", &pid)
+			if pid > 0 && pid != myPID {
+				proc, err := os.FindProcess(pid)
+				if err == nil {
+					proc.Signal(os.Kill)
+					log.Printf("🧹 Killed stale kernos_server process (PID %d)", pid)
+				}
+			}
+		}
+	}
 }

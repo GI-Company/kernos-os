@@ -33,11 +33,11 @@ export const PackageManagerApp: React.FC = () => {
     const fetchPackages = () => {
         setLoading(true);
         kernel.publish('pkg.list', { _request_id: Math.random().toString() });
-        // Fallback to static list after 2 seconds if no response
+        // Fallback to static list after 5 seconds if no response
         setTimeout(() => {
             setPackages(prev => prev.length === 0 ? FALLBACK_PACKAGES : prev);
             setLoading(false);
-        }, 2000);
+        }, 5000);
     };
 
     useEffect(() => {

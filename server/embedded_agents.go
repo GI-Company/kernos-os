@@ -134,6 +134,7 @@ func StartEmbeddedAgents(lmStudioURL string, authToken string) {
 
 	go func() {
 		defer watcher.Close()
+		var debounceTimer *time.Timer
 		for {
 			select {
 			case event, ok := <-watcher.Events:
@@ -141,10 +142,16 @@ func StartEmbeddedAgents(lmStudioURL string, authToken string) {
 					return
 				}
 				if event.Op&fsnotify.Write == fsnotify.Write {
-					log.Printf("[Agents] 🔄 agents.yaml modified! Hot-reloading AI Agent cluster...")
-					stopAgents()
-					time.Sleep(1 * time.Second) // Let old connections die
-					startAgents()
+					// Debounce: wait 3 seconds of silence before reloading
+					if debounceTimer != nil {
+						debounceTimer.Stop()
+					}
+					debounceTimer = time.AfterFunc(3*time.Second, func() {
+						log.Printf("[Agents] 🔄 agents.yaml modified! Hot-reloading AI Agent cluster...")
+						stopAgents()
+						time.Sleep(3 * time.Second) // Let old connections fully die
+						startAgents()
+					})
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {

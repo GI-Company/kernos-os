@@ -30,7 +30,7 @@ func main() {
 	agentID := flag.String("id", "agent-dispatcher", "The unique identity of this agent")
 	displayName := flag.String("name", "Dispatcher", "Human-readable display name")
 	role := flag.String("role", "agent", "The role of this client")
-	model := flag.String("model", "qwen/qwen3-vl-4b", "The LM Studio model to use")
+	model := flag.String("model", "mistralai/codestral-22b-v0.1", "The LM Studio model to use")
 	systemPrompt := flag.String("system", "You are an autonomous AI agent integrated into Kernos OS.", "System prompt for the LLM")
 	lmStudioQueryURL := flag.String("lmurl", "http://127.0.0.1:1234/v1/chat/completions", "LM Studio API URL")
 	flag.Parse()

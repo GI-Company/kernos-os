@@ -52,6 +52,7 @@ export const useOS = create<OSStore>((set) => ({
     if (appId === 'metrics') { width = 450; height = 500; }
     if (appId === 'settings') { width = 450; height = 500; }
     if (appId === 'multi-agents') { width = 700; height = 550; }
+    if (appId === 'cde') { width = 1100; height = 700; }
 
     const newWindow: WindowState = {
       id,

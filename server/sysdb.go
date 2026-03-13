@@ -14,6 +14,7 @@ import (
 )
 
 var GlobalSysDB *SysDB
+var GlobalUserDB *UserAccountDB
 var JWTSecret []byte
 
 type SysDB struct {
